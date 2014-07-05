@@ -1,0 +1,6 @@
+Revision history for Perl extension Scalar::Validation.
+
+0.600  Sat Jul  5 18:21:51 2014
+	- original version; created by h2xs 1.23 with options
+		-AX Scalar::Validation
+
