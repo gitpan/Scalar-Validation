@@ -27,13 +27,8 @@ sub die_bla {
 
 is (declare_rule (
 	Positive    =>  -where   => sub { $_ >= 0 },
-                    -message => sub { "value $_ is not a positive integer" },
+                    -message => sub { "value '$_' is not a positive integer" },
 ) => Positive => "declare_rule (Positive)");
-
-is (declare_rule (
-	Bool01 => -where    => sub { defined $_ && ($_ eq '0' || $_ eq '1') },
-	           -message => sub { "value $_ is not a bool value ( 0 or 1 )" },
-) => Bool01 => "declare_rule (Bool01)");
 
 is (declare_rule (
     enum align => qw (Left l Center c right R)
@@ -66,7 +61,7 @@ is (declare_rule (
 is (declare_rule (
     Blubber => -as      => 'Bla',
                -where   => sub { $_ < 0 },
-               -message => sub { "value $_ is not a negative integer" })
+               -message => sub { "value '$_' is not a negative integer" })
 		=> Blubber => "declare_rule (Blubber)");
 
 is (declare_rule (
@@ -83,34 +78,17 @@ is (rule_known(align  => 1) => align => "rule_known(align)  = 'align'");
 is (rule_known(blabla => 1) => ''    => "rule_known(blabla) = ''");
 is (rule_known(0)           => ''    => "rule_known(0)      = ''");
 
-declare_rule (
-    Blub1 => -as      => 'Int',
-             -where   => sub { $_ < 0 },
-	-message => sub { "value $_ is not a negative integer" });
-
-is (is_valid (blub1 => Blub1 => -1) => 1 => "Test rule Blub1");
-
-is (replace_rule (
-    Blub1 => -as      => 'Int',
-             -where   => sub { $_ > 0 },
-	         -message => sub { "value $_ is not a positive integer" })
-		=> Blub1 => "replace_rule (Blub1 => ...)");
-
-is (is_valid (blub1 => Blub1 => 1) => 1 => "Test replaced rule Blub1");
-
-is (delete_rule('Blub1') => Blub1 => "delete_rule('Blub1')");
-
 # ------------------------------------------------------------------------------
 # test of rule_known()
 
 throws_ok {
     rule_known ();
-} qr/rule to search not set/o,
+} qr/rule not set/o,
     "rule_known (): detect that rule is missing";
 
 throws_ok {
     rule_known ('');
-} qr/rule to search not set/o,
+} qr/rule not set/o,
     "rule_known (''): detect that rule is missing";
 
 # ------------------------------------------------------------------------------
@@ -118,12 +96,12 @@ throws_ok {
 
 throws_ok {
     declare_rule ();
-} qr/rule to declare not set/o,
+} qr/rule not set/o,
     "declare_rule (): detect that rule is missing";
 
 throws_ok {
     declare_rule ('');
-} qr/rule to declare not set/o,
+} qr/rule not set/o,
     "declare_rule (''): detect that rule is missing";
 
 throws_ok {
@@ -154,40 +132,6 @@ declare_rule (blubber =>
 # ------------------------------------------------------------------------------
 # test of validate() => ok
 
-is (validate (parameter => Defined => ''),         '',  "(Defined => '')");
-is (validate (parameter => Defined => 0),           0,  "(Defined => 0)");
-is (validate (parameter => Defined => 1),           1,  "(Defined => 1)");
-is (validate (parameter => Defined => 'text'), 'text',  "(Defined => text)");
-
-is (validate (parameter => Filled   => 0),           0, "(Filled => 0)");
-is (validate (parameter => Filled   => 1),           1, "(Filled => 1)");
-is (validate (parameter => Filled   => 'text'), 'text', "(Filled => text)");
-
-is (validate (parameter => Empty    => undef), undef,   "(Empty    => undef)");
-is (validate (parameter => Empty    => ''),       '',   "(Empty    => '')");
-
-is (validate (parameter => Optional => undef), undef,   "(Optional  => undef)");
-is (validate (parameter => Optional => 123),     123,   "(Optional  => 123)");
-
-is (validate (parameter => String   => ''),       '',   "(String   => '')");
-is (validate (parameter => String   => 0),         0,   "(String   => 0)");
-is (validate (parameter => String   => 1),         1,   "(String   => 1)");
-
-is (validate (parameter => Int   => '0'),  0, "(Int   =>  '0')");
-is (validate (parameter => Int   =>  1),   1, "(Int   =>   1)");
-is (validate (parameter => Int   =>  17), 17, "(Int   =>  17)");
-
-is (validate (parameter => Even  =>  16), 16, "(Even  =>  16)");
-
-is (validate (parameter => Scalar   => undef), undef,  "(Scalar   => undef)");
-is (validate (parameter => Scalar   => ''),       '',  "(Scalar   => '')");
-is (validate (parameter => Scalar   => 0),         0,  "(Scalar   => 0)");
-is (validate (parameter => Scalar   => 1),         1,  "(Scalar   => 1)");
-
-ok (validate (parameter => ArrayRef => [1 ,  2]),      "(ArrayRef => [1, 2])");
-ok (validate (parameter => HashRef  => {1 => 2}),      "(HashRef  => {1 => 2})");
-ok (validate (parameter => CodeRef  => sub {1}),       "(CodeRef  => sub {1})");
-
 is (validate (parameter => Bool     => undef), undef,  "(Bool     => undef)");
 is (validate (parameter => Bool     => ''),       '',  "(Bool     => '')");
 is (validate (parameter => Bool     => 'a'),     'a',  "(Bool     => 'a')");
@@ -197,13 +141,26 @@ is (validate (parameter => Bool     => 2),         2,  "(Bool     => 2)");
 is (validate (parameter => Bool01   => 0),         0,  "(Bool01   => 0)");
 is (validate (parameter => Bool01   => 1),         1,  "(Bool01   => 1)");
 
+is (validate (parameter => Scalar   => undef), undef,  "(Scalar   => undef)");
+is (validate (parameter => Scalar   => ''),       '',  "(Scalar   => '')");
+is (validate (parameter => Scalar   => 0),         0,  "(Scalar   => 0)");
+is (validate (parameter => Scalar   => 1),         1,  "(Scalar   => 1)");
+is (validate (parameter => String   => ''),       '',  "(String   => '')");
+is (validate (parameter => String   => 0),         0,  "(String   => 0)");
+is (validate (parameter => String   => 1),         1,  "(String   => 1)");
 is (validate (parameter => Any      => 1),         1,  "(Any      => 1)");
 is (validate (parameter => Positive => 1),         1,  "(Positive => 1)");
+ok (validate (parameter => CodeRef  => sub {1}),       "(CodeRef  => sub {1})");
+is (validate (parameter => Filled   => 0),         0,  "(Filled   => 0)");
+is (validate (parameter => Filled   => 1),         1,  "(Filled   => 1)");
+is (validate (parameter => Empty    => undef), undef,  "(Empty    => undef)");
+is (validate (parameter => Empty    => ''),       '',  "(Empty    => '')");
 
 is (validate (my_float   => Float       => "123.789"), 123.789, "(Float       => 123.789)");
 
 is (validate (parameter => PositiveInt => 123),                     123, "(PositiveInt => 123)");
 is (validate (parameter => PositiveInt => +0),                        0, "(PositiveInt => +0)");
+is (validate (parameter => Int   => '0'),                             0, "(Int   => '0')");
 is (validate (parameter => Float => '0'),                             0, "(Float => '0')");
 is (validate (parameter => Float => '123.1'),                     123.1, "(Float => '123.1')");
 is (validate (parameter => Float => '1E4')+0,                       1E4, "(Float => '1E4')");
@@ -236,6 +193,8 @@ is (validate (parameter => PositiveFloat => 1),                       1, "(Posit
 is (validate (parameter => -And => [Int => 'Float'], '123'),                123, "([Int => 'Float'] => '123')");
 is (validate (parameter => -And => [Int => Float => 0], '123'),             123, "([Int => 'Float' => 0] => '123')");
 
+is (validate (parameter =>  Optional =>  undef),                  undef, "( Optional  => undef)");
+is (validate (parameter =>  Optional =>  123),                      123, "( Optional  => 123)");
 is (validate (parameter => -And => ['Optional'], undef),                  undef, "(-And => [Optional] => undef)");
 is (validate (parameter => -And => ['Optional'], 123),                      123, "(-And => [Optional] => 123)");
 is (validate (parameter => -And => [Optional => 0], undef),               undef, "(-And => [Optional  => 0] => undef)");
@@ -719,5 +678,3 @@ throws_ok {
 # all test done here
 
 done_testing();
-
-exit 0;

@@ -1,8 +1,10 @@
 # Perl
 #
-# Performance Tests of TypeValidation
+# Performance Tests of Validation
 #
-# Wed Jun 25 13:32:12 2014
+# Sun Jul  6 10:19:58 2014
+
+$| = 1;
 
 use strict;
 use warnings;
@@ -11,51 +13,93 @@ use Scalar::Validation qw (:all);
 
 use Time::HiRes qw(time);
 
-# ($Scalar::Validation::fail_action, $Scalar::Validation::off)   = prepare_validation_mode(off => 1);
-
 declare_rule (
     Any => -where   => sub { 1; },
-	-message => sub { "No problem!!"}
-);
+    -message => sub { "No problem!!"}
+    );
 
+# my $max_loops = 1000000;
+my $max_loops = 100000;
+# my $max_loops = 10000;
+# my $max_loops = 1000;
 my $run = 0;
-my $max_loops_per_second = 0;
-while ( $run < 3) {
-	my $loops = 100;
 
-	my $rules_ref = [Any => Any => 0];
+# --- content, called by both loops ---
+
+# my $sub_content;
+my $sub_content = sub { my $v = shift; return ++$v; };
+# my $sub_content = sub { my @arr = map { $_ } (0..shift); };
+
+# --- first get time needed without validation ---
+
+my $max_empty_loops_per_second = 0;
+while ($run < 3) {
+    my $loops = 1000;
+
+    my $rules_ref = [Any => Any => 0];
+    
+    while ($loops <= $max_loops ) {
+	my $start_time = time;
 	
-	while ($loops <= 100000 ) {
-		my $start_time = time;
-		
-		foreach my $i (1..$loops) {
-			# eval {
-			# my $variable = -1 + $loops;
-			my $variable = validate(Performance => Any => -1);
-			# my $variable = is_valid(Performance => Any => -1);
-			# my $variable = validate(Performance => [Any => 'Any'] => -1);
-			# my $variable = validate(Performance => -And => [Any => Any => 0] => -1);
-			# my $variable = validate(Performance => $rules_ref => -1);
-			# my $variable = validate(Performance => Int => -1);
-			# my $variable = validate(Performance => -Optional => Int => undef);
-			# my $variable = validate(Performance => -Optional => Int => '');  # => dies
-			# my $variable = validate(Performance => -Optional => Int => -1);
-			# my $variable = validate(Performance => -Optional => Float => -1.1);
-			# };
-		}
-		
-		my $duration = time - $start_time;
-		my $loops_per_second = $loops / $duration;
-		$max_loops_per_second = $loops_per_second if $max_loops_per_second < $loops_per_second;
-		
-		print "## validations $loops, time $duration s, validations/second: $loops_per_second\n";
-		
-		$loops *= 10;
+	foreach my $i (1..$loops) {
+	    my $variable = -1 + $i;
+	    $sub_content->($variable) if $sub_content;
 	}
-	$run++;
+	my $duration = time - $start_time;
+	my $loops_per_second = $loops / $duration;
+	$max_empty_loops_per_second = $loops_per_second if $max_empty_loops_per_second < $loops_per_second;
+	
+	print "## empty $loops, time $duration s, validations/second: $loops_per_second\n";
+	
+	$loops *= 10;
+    }
+    $run++;
 }
 
-print "\n## max $max_loops_per_second\n";
+# --- now get time needed with validation ---
+# ($Scalar::Validation::fail_action, $Scalar::Validation::off)   = prepare_validation_mode(off => 1);
+
+my $max_loops_per_second = 0;
+
+$run = 0;
+while ($run < 3) {
+    my $loops = 1000;
+
+    my $rules_ref = [Any => Any => 0];
+    
+    while ($loops <= $max_loops ) {
+	my $start_time = time;
+	
+	foreach my $i (1..$loops) {
+	    my $variable = validate(Performance => Any => $i);
+	    # my $variable = is_valid(Performance => Any => $i);
+	    # my $variable = validate(Performance => [Any => 'Any'] => $i);
+	    # my $variable = validate(Performance => -And => [Any => Any => 0] => $i);
+	    # my $variable = validate(Performance => $rules_ref => $i);
+	    # my $variable = validate(Performance => Int => $i);
+	    # my $variable = validate(Performance => -Optional => Int => undef);
+	    # my $variable = validate(Performance => -Optional => Int => '');  # => dies
+	    # my $variable = validate(Performance => -Optional => Int => $i);
+	    # my $variable = validate(Performance => -Optional => Float => $i);
+	    # };
+
+	    $sub_content->($variable-1) if $sub_content;
+	}
+	
+	my $duration = time - $start_time;
+	my $loops_per_second = $loops / $duration;
+	$max_loops_per_second = $loops_per_second if $max_loops_per_second < $loops_per_second;
+	
+	print "## validations $loops, time $duration s, validations/second: $loops_per_second\n";
+	
+	$loops *= 10;
+    }
+    $run++;
+}
+
+my $factor = $max_loops_per_second / $max_empty_loops_per_second * 100.0;
+print "\n## max loops per second = $max_loops_per_second\n";
+print "## factor               = $factor %\n";
 
 #------------------------------------------------------------------------------------
 ## max 6092033.29024387   => my $variable = -1 + $loops;

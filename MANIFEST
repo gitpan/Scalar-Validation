@@ -4,7 +4,6 @@ MANIFEST
 README
 t/Scalar-Validation.t
 lib/Scalar/Validation.pm
-lib/Scalar/Validation/Examples/Vt.pm
 lib/Scalar/Validation/Examples/explicit.pl
 lib/Scalar/Validation/Examples/indexed.pl
 lib/Scalar/Validation/Examples/named.pl

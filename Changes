@@ -4,3 +4,9 @@ Revision history for Perl extension Scalar::Validation.
 	- original version; created by h2xs 1.23 with options
 		-AX Scalar::Validation
 
+0.601  Sun Jul  6 08:16:05 2014
+	- documentation and CPAN configuration issues solved
+    - defaults now only used for undefined values, not for "unless $value".
+	- declare_rule overworked
+    - delete_rule, replace_rule added
+
