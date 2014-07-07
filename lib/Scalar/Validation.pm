@@ -9,7 +9,7 @@
 # More documentation at the end of file
 #------------------------------------------------------------------------------
 
-$VERSION = "0.601";
+$VERSION = "0.602";
 
 package Scalar::Validation;
 
@@ -860,7 +860,7 @@ parameters easy, is fast and uses pure Perl.
 
 =head1 VERSION
 
-This documentation refers to version 0.601 of Scalar::Validation
+This documentation refers to version 0.602 of Scalar::Validation
 
 =head1 SYNOPSIS
 

@@ -7,5 +7,5 @@ WriteMakefile(
     PREREQ_PM         => { 'Test::Exception'	=> '0'}, # or => 1.1
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM  => 'lib/Scalar/Validation.pm', # retrieve abstract from module
-       AUTHOR         => 'Ralf Peine <ralf.peine@jupiter-programs.de>') : (),
+       AUTHOR         => 'Ralf Peine <ralf.peine@jupiter-programs.de>') : ()),
 );

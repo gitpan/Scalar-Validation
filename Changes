@@ -10,3 +10,6 @@ Revision history for Perl extension Scalar::Validation.
 	- declare_rule overworked
     - delete_rule, replace_rule added
 
+0.602  Sun Jul  6 08:16:05 2014
+       - repair syntax of Makefile.PL
+
