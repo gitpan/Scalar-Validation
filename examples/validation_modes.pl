@@ -12,10 +12,10 @@ use strict;
 use warnings;
 
 use Scalar::Validation qw (:all);
-use Scalar::Validation::Examples::Vt;
+use Vt;
 
 sub position {
-    Scalar::Validation::Examples::Vt::position(@_);
+    Vt::position(@_);
 }
 
 my $validation_mode = shift || 'die';

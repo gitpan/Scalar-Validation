@@ -4,12 +4,14 @@
 #
 # Simple rule based validation package for scalar values
 #
-# Ralf Peine, Sat Jul  5 17:47:11 2014
+# Ralf Peine, Tue Jul  8 20:31:13 2014
+#
+# Changes 
 #
 # More documentation at the end of file
 #------------------------------------------------------------------------------
 
-$VERSION = "0.602";
+$VERSION = "0.610";
 
 package Scalar::Validation;
 
@@ -20,17 +22,17 @@ use warnings;
 
 our @EXPORT = qw();
 our @EXPORT_OK = qw (validate is_valid validate_and_correct npar named_parameter par parameter 
-                     rule_known declare_rule delete_rule replace_rule enum Enum enum_explained Enum_explained
-                     greater_than less_than equal_to
+                     get_rules rule_known declare_rule delete_rule replace_rule enum Enum enum_explained Enum_explained
+                     greater_than greater_equal less_than less_equal equal_to g_t g_e l_t l_e   
                      convert_to_named_params parameters_end p_end
-                     validation_messages get_and_reset_validation_messages prepare_validation_mode);
+                     validation_trouble validation_messages get_and_reset_validation_messages prepare_validation_mode);
 
 our %EXPORT_TAGS = (
         all => [qw(validate is_valid validate_and_correct npar named_parameter par parameter
-				   rule_known declare_rule delete_rule replace_rule enum Enum enum_explained Enum_explained
-                   greater_than less_than equal_to
+                   get_rules rule_known declare_rule delete_rule replace_rule enum Enum enum_explained Enum_explained
+                   greater_than greater_equal less_than less_equal equal_to g_t g_e l_t l_e   
                    convert_to_named_params parameters_end p_end
-                   validation_messages get_and_reset_validation_messages prepare_validation_mode)],
+                   validation_trouble validation_messages get_and_reset_validation_messages prepare_validation_mode)],
 );               
 
 use Carp;
@@ -71,8 +73,9 @@ my $get_caller_info_default = sub {
 #
 # ------------------------------------------------------------------------------
 
-our $message_store   = undef; # local ($Scalar::Validation::message_store) = []; # to start storing messages
-our $off             = 0;     # no checks if $off == 1
+our $message_store   = undef; # local $Scalar::Validation::message_store = []; # to start storing messages
+our $trouble_level   = 0;     # to count failed validations. Not affected by is_valid(...)
+our $off             = 0;     # no validation checks if $off == 1
 
 # ------------------------------------------------------------------------------
 #
@@ -101,69 +104,114 @@ my $get_content_subs;
 
 $rule_store = {
 
-	# --- This rules are needed for Validation.pm to work, don't delete or change! ---
-	
-    Defined     =>   { -where   => sub { defined $_ },
+        # --- This rules are needed for Validation.pm to work, don't delete or change! ---
+        
+    Defined     =>   { -name    => 'Defined',
+                       -where   => sub { defined $_ },
                        -message => sub { "value is not defined" },
+                       -description => "Value is defined",
     },
-    Filled      =>   { -where   => sub { defined $_ and ref($_) eq '' and $_ ne '' },
+    Filled      =>   { -name    => 'Filled',
+                       -where   => sub { defined $_ and ref($_) eq '' and $_ ne '' },
                        -message => sub { "value is not set" },
+                       -description => "Value is Scalar and defined and not empty ('')",
     },
-    Empty       =>   { -where   => sub { !defined $_ or $_ eq '' },
+    Empty       =>   { -name    => 'Empty',
+                       -where   => sub { !defined $_ or $_ eq '' },
                        -message => sub { "value $_ has to be empty" },
+                       -description => "Value is not defined or ''",
     },
-    Optional    =>   { -where   => sub { 1; },
+    Optional    =>   { -name    => 'Optional',
+                       -where   => sub { 1; },
                        -message => sub { "value is optional" },
+                       -description => "Value is optional, cannot fail. Use as last entry in -Or rule.",
     },
-    String      =>   { -where   => sub { defined $_ and ref($_) eq '' },
+    String      =>   { -name    => 'String',
+                       -where   => sub { defined $_ and ref($_) eq '' },
                        -message => sub { "value $_ is not a string" },
+                       -description => "Values is a Scalar and defined",
     },
-    Int =>           { -as      => 'Filled',
+    Int =>           { -name    => 'Int',
+                       -as      => 'Filled',
                        -where   => sub { /^[\+\-]?\d+$/ },
                        -message => sub { "value $_ is not an integer" },
+                       -description => "Value is an integer",
     },
-    Even =>          { -as      => 'Int',
+    Even =>          { -name    => 'Even',
+                       -as      => 'Int',
                        -where   => sub { $_ % 2 ? 0: 1; },
                        -message => sub { "value $_ is not an integer or not even"},
+                       -description => 'Value is an even integer ($_ % 2 == 0)',
     },
-
-    Scalar      =>   { -where   => sub { ref($_) eq '' },
+    Scalar      =>   { -name    => 'Scalar',
+                       -where   => sub { ref($_) eq '' },
                        -message => sub { "value $_ is not a scalar" },
+                       -description => 'Value is a Scalar : ref ($_) eq ""',
     },
-    ArrayRef    =>   { -where   => sub { $_ and ref($_) eq 'ARRAY' },
+    Ref         =>   { -name    => 'Ref',
+                       -where   => sub { $_ and ref($_) ne '' },
+                       -message => sub { "value $_ is not a reference" },
+                       -description => "Value is a reference and not a scalar.",
+    },
+    ArrayRef    =>   { -name    => 'ArrayRef',
+                       -where   => sub { $_ and ref($_) eq 'ARRAY' },
                        -message => sub { "value $_ is not a array reference" },
+                       -description => "Value is an Array reference.",
     },
-    HashRef     =>   { -where   => sub { $_ and ref($_) eq 'HASH' },
+    HashRef     =>   { -name    => 'HashRef',
+                       -where   => sub { $_ and ref($_) eq 'HASH' },
                        -message => sub { "value $_ is not a hash reference" },
+                       -description => "Value is a Hash reference.",
     },
-    CodeRef     =>   { -where   => sub { $_ and ref($_) eq 'CODE' },
+    CodeRef     =>   { -name    => 'CodeRef',
+                       -where   => sub { $_ and ref($_) eq 'CODE' },
                        -message => sub { "value $_ is not a code reference" },
+                       -description => "Value is a Code reference.",
     },
 
-	# --- Some additional global rules --------------------
-	
-    Bool =>          { -where   => sub { ref ($_) ? 0: 1 },
-                       -message => sub { "value $_ is not a bool value" },
+    ExistingFile  => { -name    => 'ExistingFile',
+                       -as      => 'Filled',
+                       -where   => sub { -f $_ },
+                       -message => sub { "$_ is not a valid name of an existing file"},
+                       -description => "File with given file name has to exist"
     },
-    PositiveInt =>   { -as      => 'Int',
+
+    # --- Some additional global rules --------------------
+        
+    Bool =>          { -name    => 'Bool',
+                       -where   => sub { ref ($_) ? 0: 1 },
+                       -message => sub { "value $_ is not a bool value" },
+                       -description => "Value is a Scalar, all values including undef allowed",
+    },
+    PositiveInt =>   { -name    => 'PositiveInt',
+                       -as      => 'Int',
                        -where   => sub { $_ >= 0 },
                        -message => sub { "value $_ is not a positive integer" },
+                       -description => "Value is a positive integer",
     },
-    NegativeInt =>   { -as      => 'Int',
+    NegativeInt =>   { -name    => 'NegativeInt',
+                       -as      => 'Int',
                        -where   => sub { $_ < 0 },
                        -message => sub { "value $_ is not a negative integer" },
+                       -description => "Value is a negative Integer",
     },
-    Float =>         { -as      => 'Filled',
+    Float =>         { -name    => 'Float',
+                       -as      => 'Filled',
                        -where   => sub { /^[\+\-]?\d+(\.\d+)?([Ee][\+-]?\d+)?$/ },
                        -message => sub { "value $_ is not a float" },          
+                       -description => "Value is a floating number with optional exponent",
     },
-    PositiveFloat => { -as      => 'Float',
+    PositiveFloat => { -name    => 'PositiveFloat',
+                       -as      => 'Float',
                        -where   => sub { $_ > 0 },
                        -message => sub { "value $_ is not a positive float" },         
+                       -description => "Value is a positive floating number with optional exponent",
     },
-    NegativeFloat => { -as      => 'Float',
+    NegativeFloat => { -name    => 'NegativeFloat',
+                       -as      => 'Float',
                        -where   => sub { $_ < 0 },
                        -message => sub { "value $_ is not a negative float" },         
+                       -description => "Value is a negative floating number with optional exponent",
     },
 };
 
@@ -216,17 +264,27 @@ $special_rules = {
             
             foreach my $rule (@$rule_list) {
                 if (!defined $rule || $rule eq '') {
-                    $fail_action->("rule for validation not set");
+                    $trouble_level++;
+                    $fail_action->("Rules: rule for validation not set");
                     next        # in case of fail action doesn't die
                 }
                 
                 if ($rule) {
+                    my $special_rule = $special_rules->{$rule};
+                    
+                    if ($special_rule) {
+                        $trouble_level++;
+                        $fail_action->("Rules: cannot call any special rule inside of rule '-And'\n");
+                        next;
+                    }                        
+
                     validate ($subject_info, $rule, $_, $message_ref);
                     $rule_exists = 1;
                 }
             }
             
-            $fail_action->("No rule found in list to be validated") unless $rule_exists;
+            $trouble_level++;
+            $fail_action->("Rules: No rule found in list to be validated") unless $rule_exists;
             
             return $orig_value;
         }
@@ -238,19 +296,50 @@ $special_rules = {
             my    $rule_list    = shift;
             local $_            = shift;
             my    $message_ref  = shift;
-
+            
             my $rule_exists  = 0;
             my $orig_value   = $_;
-        
-            foreach my $rule (@$rule_list) {
-                if (!defined $rule || $rule eq '') {
-                    $fail_action->("rule for validation not set");
+            
+            foreach my $rule_info (@$rule_list) {
+                if (!defined $rule_info || $rule_info eq '') {
+                    $trouble_level++;
+                    $fail_action->("Rules: rule for validation not set");
                     next        # in case of fail action doesn't die
                 }
+                
+                next unless $rule_info;
+                
+                my $rule_ref = $rule_store->{$rule_info};
+                unless ($rule_ref) {
+                    my $special_rule = $special_rules->{$rule_info};
+                    
+                    if ($special_rule) {
+                        $trouble_level++;
+                        $fail_action->("Rules: cannot call any special rule inside of rule '-Or'\n");
+                        next;
+                    }                        
 
-                next unless $rule;
+                    my $ref_type = ref ($rule_info);
+                        
+                    unless ($ref_type) {
+                        $trouble_level++;
+                        $fail_action->("Rules: unknown rule '$rule_info' for validation");
+                        next; # in case of fail action doesn't die
+                    } elsif ($ref_type eq 'HASH') { # given rule
+                        $rule_ref = $rule_info;
+                        # TODO: validate rule ...
+                    } elsif ($ref_type eq 'CODE') { # where condition for rule
+                        $rule_ref = {
+                            -where   => $rule_info,
+                            -message => sub { "$_ does not match free defined rule" },
+                        };
+                    } else {
+                        $trouble_level++;
+                        $fail_action->("Rules: cannot handle ref type '$ref_type' of rule '$rule_info' for validation");
+                        next;   # in case of fail action doesn't die
+                    }
+                }
 
-                my $rule_ref = $rule_store->{$rule};
                 if ($rule_ref) {
                     my $test_message_ref = $message_ref || $rule_ref->{-message};
 
@@ -263,7 +352,8 @@ $special_rules = {
                 }
             }
         
-            $fail_action->("No rule found in list to be validated") unless $rule_exists;
+            $trouble_level++;
+            $fail_action->("Rules: No rule found in list to be validated") unless $rule_exists;
 
             my $result = _do_fail($subject_info, $message_ref || sub { "No rule matched of [".join(', ', @$rule_list)."]";});
             return $result if defined $result;
@@ -342,6 +432,7 @@ $special_rules = {
             unless ($is_valid) {
                 my $message = join ("\n", @messages);
                 push (@$message_store, $message) if $message_store;
+                $trouble_level++;
                 my $result = $fail_action->($message);
                 return $result if defined $result;
 
@@ -358,25 +449,25 @@ $special_rules = {
         }
     },
     -RefEmpty => {
-	-value_position => 3,
-	-code => sub {
-	    
-	    my    $subject_info = shift || '';
+        -value_position => 3,
+        -code => sub {
+            
+            my    $subject_info = shift || '';
             local $_            = shift;
             my    $message_ref  = shift;
-	    
-	    my $content_ref = _ref_empty_check($subject_info, $_, $message_ref);
-	    
-	    return undef unless defined $content_ref;
-	    
-	    my $count_results = scalar @$content_ref;
-	    return 0 unless $count_results;
-	    
-	    _do_fail($subject_info, sub { "Should be empty, but contains $count_results entries: [ ".
-					      join (", ", @$content_ref)." ];" });
-	    
-	    return $count_results;
-	}
+            
+            my $content_ref = _ref_empty_check($subject_info, $_, $message_ref);
+            
+            return undef unless defined $content_ref;
+            
+            my $count_results = scalar @$content_ref;
+            return 0 unless $count_results;
+            
+            _do_fail($subject_info, sub { "Should be empty, but contains $count_results entries: [ ".
+                                              join (", ", @$content_ref)." ];" });
+            
+            return $count_results;
+        }
     },
 };
 
@@ -398,8 +489,12 @@ sub _handle_enum_explained {
         if ($arg eq 1 or $arg eq 0) {
             # arg is complete
             my $last_idx = $#enum_args;
-            $fail_action->("not enough configuration values for enum '$enum_args[0]'")
-                if $last_idx < 1;
+
+            if ($last_idx < 1) {
+                $trouble_level++;
+                $fail_action->("Rules: not enough configuration values for enum '$enum_args[0]'");
+            }
+            
             my $explanation = $enum_args[$last_idx];
             map { my $key = $transform_key_ref ? $transform_key_ref->($_): $_;
                   $enums{$key} = $explanation;
@@ -433,7 +528,8 @@ sub _check_parent_rules {
     my $rule_ref = $rule_store->{$rule_name};
 
     unless ($rule_ref) {
-        $fail_action->("unknown rule '$rule_name' for validation");
+        $trouble_level++;
+        $fail_action->("Rules: unknown rule '$rule_name' for validation");
         return 0; # in case of fail action doesn't die
     }
     
@@ -469,11 +565,14 @@ sub _ref_empty_check {
 sub _do_fail {
     my $subject_info = shift;
     my $message_ref  = shift;
-        
+
+    $trouble_level++;
+
     $_ = defined ($_) ? "'$_'" : '<undef>';
 
     my $message = $get_caller_info->()."($subject_info): ".$message_ref->();
     push (@$message_store, $message) if $message_store;
+
     return $fail_action->($message);
 }
 
@@ -491,7 +590,12 @@ sub _init_run_API {
 
     *validate  = *_do_validate;
 
-    *p_end     = *parameters_end ;
+    *p_end     = *parameters_end;
+
+    *g_t       = *greater_than;
+    *g_e       = *greater_equal;
+    *l_t       = *less_than;
+    *l_e       = *less_equal;
 
 }
 
@@ -528,6 +632,11 @@ sub parameters_end {
 #
 # ------------------------------------------------------------------------------
 
+sub validation_trouble {
+    my $trouble_accepted = shift || 0;
+    return $trouble_level > $trouble_accepted ? $trouble_level: 0;
+}
+
 sub validation_messages {
     my $mode = shift || '';
 
@@ -544,8 +653,9 @@ sub prepare_validation_mode {
     my $new_fail_action = $fail_action;
     my $new_off         = $off;
 
-    unless (is_valid(mode => -Enum => [ qw (die warn ignore off) ] => $mode)) {
-        croak "unknown mode for Scalar::Validation selected: '$mode'";
+    unless (is_valid(mode => -Enum => [ qw (die warn silent off) ] => $mode)) {
+        $trouble_level++;
+        croak "prepare_validation_mode(): unknown mode for Scalar::Validation selected: '$mode'";
     }
 
     # print "#### Select validation mode: $mode\n";
@@ -558,7 +668,7 @@ sub prepare_validation_mode {
         $new_fail_action   = sub { carp "Warning: ", @_; return undef; };
         $new_off = 0;
     }
-    elsif ($mode eq 'ignore') {
+    elsif ($mode eq 'silent') {
         $new_fail_action   = sub { return undef; };
         $new_off = 0;
     }
@@ -566,6 +676,8 @@ sub prepare_validation_mode {
         $new_fail_action = sub { return undef; };
         $new_off = 1;
     } else {
+        # shouldn't be reached, just to be sure
+        $trouble_level++;
         $fail_action->("prepare_validation_mode(): unknown validation mode $mode used");
     }
 
@@ -578,6 +690,10 @@ sub prepare_validation_mode {
 #
 # ------------------------------------------------------------------------------
 
+sub get_rules {
+    return $rule_store;
+}
+
 sub rule_known {
     my $rule = par (rule => Filled => shift, sub { "rule to search not set" });
 
@@ -586,46 +702,48 @@ sub rule_known {
 
 sub declare_rule {
     my $rule_name    = par (rule => Filled => shift, sub { "rule to declare not set" });
-	if (rule_known($rule_name)) { $fail_action->("rule '$rule_name': already defined"); }
-	
+    if (rule_known($rule_name)) { $fail_action->("rule '$rule_name': already defined"); }
+        
     my %call_options = convert_to_named_params \@_;
-	my %rule_options;
+    my %rule_options;
 
     $rule_options{-where} = npar (-where => CodeRef => \%call_options
-		 => sub { "rule '$rule_name': where condition"._defined_or_not_message($_, " is not a code reference: $_");});
+        => sub { "rule '$rule_name': where condition"._defined_or_not_message($_, " is not a code reference: $_");});
 
     $rule_options{-message} = npar (-message => -Optional => CodeRef => \%call_options
-		         => sub { "rule '$rule_name': message"._defined_or_not_message($_, " is not a code reference: $_");})
-		 || sub { "Value $_ is not valid for rule '$rule_name'" };
+        => sub { "rule '$rule_name': message"._defined_or_not_message($_, " is not a code reference: $_");})
+           || sub { "Value $_ is not valid for rule '$rule_name'" };
 
-	$rule_options{-as}   = npar (-as   => -Optional => String  => \%call_options);
-	$rule_options{-enum} = npar (-enum => -Optional => HashRef => \%call_options);
-	
-	parameters_end (\%call_options);
-
+    $rule_options{-as}           = npar (-as          => -Optional => String  => \%call_options);
+    $rule_options{-enum}         = npar (-enum        => -Optional => HashRef => \%call_options);
+    $rule_options{-name}         = npar (-name        => -Optional => String  => \%call_options) || $rule_name;
+    $rule_options{-description } = npar (-description => -Optional => String => \%call_options) || "Rule $rule_name";
+        
+    parameters_end (\%call_options);
+    
     $rule_store->{$rule_name} = \%rule_options; 
-
-	return $rule_name;
+    
+    return $rule_name;
 }
 
 sub delete_rule {
     my $rule_name    = par (rule => Filled => shift, sub { "rule to delete not set" });
 
-	validate (delete_rule => Defined => delete $rule_store->{$rule_name}
-				  => sub {"no rule $rule_name found to delete"});
-	return $rule_name;
+        validate (delete_rule => Defined => delete $rule_store->{$rule_name}
+                                  => sub {"no rule $rule_name found to delete"});
+        return $rule_name;
 }
 
 sub replace_rule {
-	my $rule_name    = par (rule => Filled => shift, sub { "rule to replace not set" });
+        my $rule_name    = par (rule => Filled => shift, sub { "rule to replace not set" });
 
-	return declare_rule(delete_rule($rule_name), @_);
+        return declare_rule(delete_rule($rule_name), @_);
 }
 
 # $_ is set to string '<undef>' in message part, if it was not defined
 sub _defined_or_not_message {
-	return " is missing" if '<undef>' eq shift;
-	return shift;
+        return " is missing" if '<undef>' eq shift;
+        return shift;
 }
 
 sub Enum {
@@ -661,41 +779,61 @@ sub enum_explained {
 }
 
 sub greater_than {
-        my $limit      = shift;
+    my $limit      = shift;
     my $type       = shift;
-        return ({ -as    => $type,
-                          -where   => sub { $_ > $limit },
-                          -message => sub { "$_ > $limit failed. Value is not of type $type or not greater than limit."},
-                  },
-                        @_);
+    return ({ -as    => $type,
+              -where   => sub { $_ > $limit },
+              -message => sub { "$_ > $limit failed. Value is not of type $type or not greater than limit."},
+          },
+            @_);
+}
+
+sub greater_equal {
+    my $limit      = shift;
+    my $type       = shift;
+    return ({ -as    => $type,
+              -where   => sub { $_ >= $limit },
+              -message => sub { "$_ >= $limit failed. Value is not of type $type or not greater than limit."},
+          },
+            @_);
 }
 
 sub equal_to {
-        my $compare      = shift;
+    my $compare      = shift;
     my $type         = shift;
-        if ($type eq 'String') {
-                return ({ -as    => $type,
-                                  -where   => sub { $_ eq $compare },
-                                  -message => sub { "$_ eq $compare failed. Value is not of type $type or different."},
-                          },
-                                @_);
-        }
-        
+    if ($type eq 'String') {
         return ({ -as    => $type,
-                          -where   => sub { $_ == $compare },
-                          -message => sub { "$_ == $compare failed. Value is not of type $type or different."},
-                  },
-                        @_);
+                  -where   => sub { $_ eq $compare },
+                  -message => sub { "$_ eq $compare failed. Value is not of type $type or different."},
+              },
+                @_);
+    }
+        
+    return ({ -as    => $type,
+              -where   => sub { $_ == $compare },
+              -message => sub { "$_ == $compare failed. Value is not of type $type or different."},
+          },
+            @_);
 }
 
 sub less_than {
-        my $limit      = shift;
+    my $limit      = shift;
     my $type       = shift;
-        return ({ -as    => $type,
-                          -where => sub { $_ < $limit },
-                          -message => sub { "$_ < $limit failed. Value is not of type $type or not less than limit."},
-                  },
-                        @_);
+    return ({ -as    => $type,
+              -where => sub { $_ < $limit },
+              -message => sub { "$_ < $limit failed. Value is not of type $type or not less than limit."},
+          },
+            @_);
+}
+
+sub less_equal {
+    my $limit      = shift;
+    my $type       = shift;
+    return ({ -as    => $type,
+              -where => sub { $_ <= $limit },
+              -message => sub { "$_ <= $limit failed. Value is not of type $type or not less than limit."},
+          },
+            @_);
 }
 
 # ------------------------------------------------------------------------------
@@ -707,9 +845,11 @@ sub less_than {
 # --- helpful for tests ------------------------------------------------
 
 sub is_valid {
-    my $valid = 1; 
-    local ($fail_action) = sub { $valid = 0 };
-    
+    my $valid = 1;
+
+    local $fail_action   = sub { $valid = 0 };
+    local $trouble_level = 0; # not to rise trouble level
+        
     validate(@_);
 
     return $valid;
@@ -794,6 +934,7 @@ sub _do_validate {
     my    $rule_info    = shift;
 
     unless ($rule_info) {
+        $trouble_level++;
         $fail_action->("rule for validation not set");
         return $_; # in case of fail action doesn't die
     }
@@ -803,28 +944,30 @@ sub _do_validate {
     unless ($rule_ref) {
         my $special_rule = $special_rules->{$rule_info}->{-code};
 
-                return $special_rule->($subject_info, @_) if $special_rule;
+        return $special_rule->($subject_info, @_) if $special_rule;
 
-                my $ref_type = ref ($rule_info);
-
-                unless ($ref_type) {
-                        $fail_action->("unknown rule '$rule_info' for validation");
+        my $ref_type = ref ($rule_info);
+        
+        unless ($ref_type) {
+            $trouble_level++;
+            $fail_action->("unknown rule '$rule_info' for validation");
             return shift; # in case of fail action doesn't die
-                }
-                elsif ($ref_type eq 'HASH') { # given rule
-                        $rule_ref = $rule_info;
-                        # TODO: validate rule ...
-                }
-                elsif ($ref_type eq 'CODE') { # where condition for rule
-                        $rule_ref = {
-                                -where   => $rule_info,
-                                -message => sub { "$_ does not match free defined rule" },
-                        };
-                }
-                else {
-                        $fail_action->("cannot handle ref type '$ref_type' of rule '$rule_info' for validation");
-                        return shift; # in case of fail action doesn't die
-                }
+        }
+        elsif ($ref_type eq 'HASH') { # given rule
+            $rule_ref = $rule_info;
+            # TODO: validate rule ...
+        }
+        elsif ($ref_type eq 'CODE') { # where condition for rule
+            $rule_ref = {
+                -where   => $rule_info,
+                -message => sub { "$_ does not match free defined rule" },
+            };
+        }
+        else {
+            $trouble_level++;
+            $fail_action->("Rules: cannot handle ref type '$ref_type' of rule '$rule_info' for validation");
+            return shift; # in case of fail action doesn't die
+        }
     }
 
     local $_            = shift;
@@ -841,6 +984,7 @@ sub _do_validate {
         $_ = defined ($_) ? "'$_'" : '<undef>';
         my $message = $get_caller_info->()."($subject_info): ".$test_message_ref->();
         push (@$message_store, $message) if $message_store;
+        $trouble_level++;
         my $result = $fail_action->($message);
         return $result if defined $result;
     }
@@ -849,6 +993,7 @@ sub _do_validate {
 }
 
 1;
+
 __END__
 
 =head1 NAME
@@ -860,7 +1005,7 @@ parameters easy, is fast and uses pure Perl.
 
 =head1 VERSION
 
-This documentation refers to version 0.602 of Scalar::Validation
+This documentation refers to version 0.610 of Scalar::Validation
 
 =head1 SYNOPSIS
 
@@ -888,14 +1033,14 @@ This documentation refers to version 0.602 of Scalar::Validation
   my $enum_2   = validate (enum_2  => -Optional => -Enum  => {a => 1, b => 1, c => 1} => undef);
   my $range_1  = validate (range_1 => -Optional => -Range => [1,5] => Int =>             undef);
 
-Just checks, never dies:
+B<Just checks, never dies:>
 
-  is_valid(valid_1 => Int => 123);   # is valid,     returns 1;
-  is_valid(valid_2 => Int => 1.23);  # is not valid, returns 0;
-  is_valid(valid_3 => Int => 'a');   # is not valid, returns 0;
-  is_valid(valid_4 => Int => undef); # is not valid, returns 0;
+  is_valid (valid_1 => Int => 123);   # is valid,     returns 1;
+  is_valid (valid_2 => Int => 1.23);  # is not valid, returns 0;
+  is_valid (valid_3 => Int => 'a');   # is not valid, returns 0;
+  is_valid (valid_4 => Int => undef); # is not valid, returns 0;
 
-Free defined rules or wheres only (also for validate(...))
+B<Free defined rules or wheres only> (also for validate(...))
 
   my $value = 2;
 
@@ -912,7 +1057,7 @@ Free defined rules or wheres only (also for validate(...))
 
   is_valid (free_rule_greater_zero => $my_rule => $value);              # is valid, returns 1
 
-Managing Rules
+B<Managing Rules>
 
   declare_rule (
       NegativeInt => -as      => Int =>           # Parent rule is optional
@@ -931,6 +1076,27 @@ Managing Rules
   rule_known(Unknown  => 1); # returns 0 (false)
   rule_known(Negative => 1); # returns 1 (true)
 
+B<Dynamic Rules For Comparison>
+
+  par       parameter => greater_than  4 => Int    => shift;     # = 5
+  validate  parameter => g_t           4 => Int    => $value;    # = 6
+  
+  is_valid (parameter => greater_equal 4 => Float  => $value);   # = 4.1
+  is_valid (parameter => g_e           4 => Int    => $value);   # = 4
+  
+  npar     -parameter => less_than  4 => Int       => \%options;
+  is_valid (parameter => l_t       (4 => 'Float')  => $value);   # = 4.1
+  
+  validate (parameter => less_equal (4 => 'Float') => $value);   # = 4.1
+  is_valid (parameter => l_e         4 => Int      => $value);   # = 3
+  
+  my $value = 'Text';
+  is_valid (parameter => equal_to (text => String) => lc($value)); # compares as String
+  
+  is_valid (parameter => equal_to (4 => String) => '4.0'); # not valid, compares as String
+  is_valid (parameter => equal_to (4 => Float)  =>  4.0);  # valid,    compares as number
+  is_valid (parameter => equal_to (4 => Int)    =>  4.0);  # valid !!, compares as number
+
 =head1 DESCRIPTION
 
 This class implements a fast and flexible validation for scalars.
@@ -938,11 +1104,11 @@ It is implemented functional to get speed and some problems using global rules f
 
 =head2 Validate Subs
 
-Following validation functions exists:
+Following validation functions exist:
 
   validate(...);
-    par(...);           # Alias vor validate()
-    parameter(...);     # Alias vor validate()
+    par(...);           # Alias for validate()
+    parameter(...);     # Alias for validate()
 
   named_parameter(...);
     n_par(...);         # Alias for named_parameter()
@@ -1012,6 +1178,24 @@ and 0 in case of fail.
   print is_valid(parameter => -And => [Scalar => 'Int'],  [] ) ." => [] is no scalar\n";
   print is_valid(parameter => -And => [Scalar => 'Int'],  sub { 'abc'; }) ." => sub { 'abc'; } is no scalar\n";
 
+=head2 Avoid trouble using invalid data
+
+If a validation fails and validation mode is not set as 'die', you
+probably will run in trouble afterwards, when you use invalid data.
+
+Therefore do
+
+  local ($FSL::Validation::trouble_level) = 0;
+
+  # add your code
+
+  return undef if validation_trouble(); # fire exit, if validation does not die
+
+or something similar.
+
+C<is_valid(...)> does not rise C<$trouble_level>, as to be
+expected. All other validation subs do!
+
 =head2 Get validation messages
 
 Per default, no messages are stored to increase performance. To store
@@ -1036,10 +1220,14 @@ C<parameters_end \@_;> ensures, that all parameters are processed.
 Otherwise it rises the usual validation error. Shorthand: C<p_end>.
 
   sub create_some_polynom {
+      local ($FSL::Validation::trouble_level) = 0;
+
       my $max_potenz = par maximum_potenz => -Range => [1,5] => Int => shift;
       # additional parameters ...
 
       p_end \@_;
+
+      return undef if validation_trouble(); # fire exit, if validation does not die
 
       # --- run sub -------------------------------------------------
 
@@ -1057,6 +1245,7 @@ Otherwise it rises the usual validation error. Shorthand: C<p_end>.
 
 Dies by error message
 
+  print create_some_polynom("four")."\n";
   print create_some_polynom(5.5)."\n";
   print create_some_polynom(6)."\n";
   print create_some_polynom(6, 1)."\n";
@@ -1068,12 +1257,16 @@ Named arguments can also be handled. This needs more runtime than the indexed va
 C<convert_to_named_params()> does a safe conversion by C<validate()>.
 
   sub create_some_polynom_named {
+      local ($FSL::Validation::trouble_level) = 0;
+
       my %pars = convert_to_named_params \@_;
 
       my $max_potenz = npar -maximum_potenz => -Range => [1,5] => Int => \%pars;
       # additional parameters ...
 
       parameters_end \%pars;
+
+      return undef if validation_trouble(); # fire exit, if validation does not die
 
       # --- run sub -------------------------------------------------
 
@@ -1181,7 +1374,7 @@ There are 4 predefined validation modes:
 
   die
   warn
-  ignore
+  silent
   off
 
 =head3 is_valid()
@@ -1194,7 +1387,7 @@ followings. It will do the checks in every case.
 The validation methods call C<croak "validation message";> in case of
 failures or a rule fails. Your script (or this part of your script) will die.
 
-=head3 Validation Mode 'warn' (default)
+=head3 Validation Mode 'warn'
 
 The validation methods call C<carp "validation message";> in case of
 failures or a rule fails. Your get warnings for every failed rule.
@@ -1202,10 +1395,9 @@ failures or a rule fails. Your get warnings for every failed rule.
 Your script (or this part of your script) will NOT die.
 
 It will continue work. In critical cases you should take
-care, that process will be stopped. One method is to store error
-messages and take care, that they are empty.
+care, that process will be stopped: Use validation_trouble()!
 
-=head3 Validation Mode 'ignore' (default)
+=head3 Validation Mode 'silent'
 
 The validation methods just store messages, if there is a message
 store available. No messages will be printed out.
@@ -1213,13 +1405,60 @@ store available. No messages will be printed out.
 Your script (or this part of your script) will NOT die.
 
 It will continue work. In critical cases you should take
-care, that process will be stopped. One method is to store error
-messages and take care, that they are empty.
+care, that process will be stopped: Use validation_trouble()!
 
-=head3 Validation Mode 'off' (default)
+=head3 Validation Mode 'off'
 
 The validation methods just give back the value. They even don't
 process the call parameters of the validation routines.
+
+Be careful! Now you are playing with dynamite! But you are fast.
+If you explode, just try switch validation on, if you are still alive.
+
+=head3 Faster than Validation Mode 'off'
+
+=head4 Remove validation calls
+
+Remove all validation calls from your code and fall back to era before
+C<Scalar::Validation>.
+
+Be careful! Now you are playing with nitroglycerin! But you cannot be
+faster.
+
+=head4 Duplicate parameter management
+
+Having two parameter managements, switch between them by testing
+C<$Scalar::Validation::off>: 
+
+  sub create_some_polynom {
+	  my ($max_potenz,
+	  ) = @_;
+
+	  if ($Scalar::Validation::off) {
+		  local ($FSL::Validation::trouble_level) = 0;
+
+		  $max_potenz = par maximum_potenz => -Range => [1,5] => Int => shift;
+		  # additional parameters ...
+		  
+		  p_end \@_;
+		  
+		  return undef if validation_trouble(); # fire exit, if validation does not die
+	  }
+
+      # --- run sub -------------------------------------------------
+
+      my $polynom = '';
+      map { $polynom .= " + ".int (100*rand())."*x^".($max_potenz-$_); } (0..$max_potenz);
+
+      return $polynom;
+  };
+
+Now you have only one extra if statement compared to version without
+checks. But you have duplicate parameter management. So only choose
+this variant if performance is a real problem for your sub.
+
+Be careful! You are still playing with dynamite! But you are fast.
+If you explode, just try switch validation on, if you are still alive.
 
 =head2 More Examples
 

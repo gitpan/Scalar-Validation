@@ -1,7 +1,7 @@
 
 $VERSION = "0.100";
 
-package Scalar::Validation::Examples::Vt;
+package Vt;
 
 use Scalar::Validation qw (:all);
 
