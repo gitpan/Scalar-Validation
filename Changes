@@ -20,3 +20,7 @@ Revision history for Perl extension Scalar::Validation.
     - trouble_value: count failed validations
     - better argument parsing in special rules
     - -name and -description added to rules
+
+0.611  Thu Jul 10 11:35:21 2014
+    - No functional changes
+	  - Remove examples of MANIFEST
