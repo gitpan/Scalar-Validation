@@ -2,7 +2,7 @@
 #
 # Tests of Scalar::Validation
 #
-# Tue Jul  8 21:04:54 2014
+# Mon Jul 14 10:46:20 2014
 
 use strict;
 use warnings;
@@ -331,6 +331,16 @@ is (is_valid (parameter => l_t (4 => 'Float') => 4.1),     0, "!is_valid(l_t (4 
 is (is_valid (parameter => l_e  4 => Int   => 4),          1, " is_valid(l_e  4 => Int => 4)");
 is (is_valid (parameter => l_e  4 => Int   => 3),          1, " is_valid(l_e  4 => Int => 3)");
 is (is_valid (parameter => l_e (4 => 'Float') => 4.1),     0, "!is_valid(l_e (4 => 'Float') => 4.1)");
+
+$fh = new FileHandle();
+is (is_valid (parameter => is_a FileHandle => $fh),        1, ' is_valid(is_a FileHandle => $fh)');
+is (is_valid (parameter => is_a FileHandle => \$fh),       0, '!is_valid(is_a FileHandle => \$fh)');
+is (is_valid (parameter => is_a FileHandle => undef),      0, "!is_valid(is_a FileHandle => undef)");
+is (is_valid (parameter => is_a Bla        => 0),          0, "!is_valid(is_a Bla        => 0)");
+is (is_valid (parameter => is_a Bla        => 1),          0, "!is_valid(is_a Bla        => 1)");
+is (is_valid (parameter => is_a Bla        => []),         0, "!is_valid(is_a Bla        => [])");
+is (is_valid (parameter => is_a Bla        => {}),         0, "!is_valid(is_a Bla        => {})");
+is (is_valid (parameter => is_a Bla        => $fh),        0, '!is_valid(is_a Bla        => $fh)');
 
 is (is_valid (free_where_greater_zero => sub { $_ && $_ > 0} => 2),  1, ' is_valid (free => sub { $_ && $_ > 0} => 2');
 is (is_valid (free_where_greater_zero => sub { $_ && $_ > 0} => 0),  0, ' is_valid (free => sub { $_ && $_ > 0} => 0');

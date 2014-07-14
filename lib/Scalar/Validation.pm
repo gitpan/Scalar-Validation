@@ -4,14 +4,12 @@
 #
 # Simple rule based validation package for scalar values
 #
-# Ralf Peine, Tue Jul  8 20:31:13 2014
-#
-# Changes 
+# Ralf Peine, Mon Jul 14 10:46:53 2014
 #
 # More documentation at the end of file
 #------------------------------------------------------------------------------
 
-$VERSION = "0.611";
+$VERSION = "0.612";
 
 package Scalar::Validation;
 
@@ -23,14 +21,16 @@ use warnings;
 our @EXPORT = qw();
 our @EXPORT_OK = qw (validate is_valid validate_and_correct npar named_parameter par parameter 
                      get_rules rule_known declare_rule delete_rule replace_rule enum Enum enum_explained Enum_explained
-                     greater_than greater_equal less_than less_equal equal_to g_t g_e l_t l_e   
+                     greater_than greater_equal less_than less_equal equal_to g_t g_e l_t l_e
+					 is_a
                      convert_to_named_params parameters_end p_end
                      validation_trouble validation_messages get_and_reset_validation_messages prepare_validation_mode);
 
 our %EXPORT_TAGS = (
         all => [qw(validate is_valid validate_and_correct npar named_parameter par parameter
                    get_rules rule_known declare_rule delete_rule replace_rule enum Enum enum_explained Enum_explained
-                   greater_than greater_equal less_than less_equal equal_to g_t g_e l_t l_e   
+                   greater_than greater_equal less_than less_equal equal_to g_t g_e l_t l_e
+				   is_a
                    convert_to_named_params parameters_end p_end
                    validation_trouble validation_messages get_and_reset_validation_messages prepare_validation_mode)],
 );               
@@ -91,10 +91,16 @@ our $get_caller_info = $get_caller_info_default;
 #  private vars of Validation "Instance"
 #
 # ------------------------------------------------------------------------------
+my $non_blessed = {
+	REF   => 1,
+	ARRAY => 1,
+	HASH  => 1,
+};
 
 my $special_rules;
 my $rule_store;
 my $get_content_subs;
+
 
 # ------------------------------------------------------------------------------
 #
@@ -167,6 +173,14 @@ $rule_store = {
                        -where   => sub { $_ and ref($_) eq 'CODE' },
                        -message => sub { "value $_ is not a code reference" },
                        -description => "Value is a Code reference.",
+    },
+    Class       =>   { -name    => 'Class',
+                       -where   => sub { return 0 unless $_;
+										 my $type_name = ref($_);
+										 !$type_name || $non_blessed->{$type_name} ? 0: 1;
+					   },
+                       -message => sub { "value $_ is not a reference" },
+                       -description => "Value is a reference and not a scalar.",
     },
 
     ExistingFile  => { -name    => 'ExistingFile',
@@ -746,6 +760,14 @@ sub _defined_or_not_message {
         return shift;
 }
 
+# ------------------------------------------------------------------------------
+#
+# Dynamic rules
+#
+# ------------------------------------------------------------------------------
+
+# --- Enum ---------------------------------------------------------------------------
+
 sub Enum {
     my $rule_name  = shift;
     my %enums      = map { $_ => 1 } @_;
@@ -777,6 +799,8 @@ sub Enum_explained {
 sub enum_explained {
     _handle_enum_explained(sub { lc($_[0])}, " (transformed to lower case)", @_);
 }
+
+# --- numerical compare ---------------------------------------------------------------------------
 
 sub greater_than {
     my $limit      = shift;
@@ -832,6 +856,17 @@ sub less_equal {
     return ({ -as    => $type,
               -where => sub { $_ <= $limit },
               -message => sub { "$_ <= $limit failed. Value is not of type $type or not less than limit."},
+          },
+            @_);
+}
+
+# --- ISA ---------------------------------------------------------------------------
+
+sub is_a {
+    my $type = shift;
+    return ({ -as      => 'Class',
+              -where   => sub { return $_->isa($type) },
+              -message => sub { "$_ is not of class $type or derived from it."},
           },
             @_);
 }
@@ -1000,12 +1035,14 @@ __END__
 
 Scalar::Validation
 
+=head ABSTRACT
+
 Makes validation of scalar values or function (sub)
 parameters easy, is fast and uses pure Perl.
 
 =head1 VERSION
 
-This documentation refers to version 0.611 of Scalar::Validation
+This documentation refers to version 0.612 of Scalar::Validation
 
 =head1 SYNOPSIS
 
@@ -1053,7 +1090,7 @@ B<Free defined rules or wheres only> (also for validate(...))
                                       }
             => $value); # is valid, returns 1
 
-  my $my_rule = { -as => Int => -where => sub { $_ && $_ > 0} => -message => sub { "$_ is not > 0" };
+  my $my_rule = { -as => Int => -where => sub { $_ && $_ > 0} => -message => sub { "$_ is not > 0" }};
 
   is_valid (free_rule_greater_zero => $my_rule => $value);              # is valid, returns 1
 
@@ -1097,10 +1134,17 @@ B<Dynamic Rules For Comparison>
   is_valid (parameter => equal_to (4 => Float)  =>  4.0);  # valid,    compares as number
   is_valid (parameter => equal_to (4 => Int)    =>  4.0);  # valid !!, compares as number
 
+  my $animal = par is_a  Animal => shift;
+  my $person = par is_a (Person => shift);
+  my $tree   = par is_a (Tree),    shift;
+
 =head1 DESCRIPTION
 
 This class implements a fast and flexible validation for scalars.
 It is implemented functional to get speed and some problems using global rules for all ;).
+
+Possibly I started a reimplementation of C<Type::Params>. I'm just
+checking the differences.
 
 =head2 Validate Subs
 
@@ -1185,7 +1229,7 @@ probably will run in trouble afterwards, when you use invalid data.
 
 Therefore do
 
-  local ($FSL::Validation::trouble_level) = 0;
+  local ($Scalar::Validation::trouble_level) = 0;
 
   # add your code
 
@@ -1220,7 +1264,7 @@ C<parameters_end \@_;> ensures, that all parameters are processed.
 Otherwise it rises the usual validation error. Shorthand: C<p_end>.
 
   sub create_some_polynom {
-      local ($FSL::Validation::trouble_level) = 0;
+      local ($Scalar::Validation::trouble_level) = 0;
 
       my $max_potenz = par maximum_potenz => -Range => [1,5] => Int => shift;
       # additional parameters ...
@@ -1257,7 +1301,7 @@ Named arguments can also be handled. This needs more runtime than the indexed va
 C<convert_to_named_params()> does a safe conversion by C<validate()>.
 
   sub create_some_polynom_named {
-      local ($FSL::Validation::trouble_level) = 0;
+      local ($Scalar::Validation::trouble_level) = 0;
 
       my %pars = convert_to_named_params \@_;
 
@@ -1380,7 +1424,7 @@ There are 4 predefined validation modes:
 =head3 is_valid()
 
 C<is_valid()> uses a special validation mode independent from the
-followings. It will do the checks in every case.
+followings. It will do the checks in all cases except mode C<'off'>.
 
 =head3 Validation Mode 'die' (default)
 
@@ -1395,7 +1439,7 @@ failures or a rule fails. Your get warnings for every failed rule.
 Your script (or this part of your script) will NOT die.
 
 It will continue work. In critical cases you should take
-care, that process will be stopped: Use validation_trouble()!
+care, that process will be stopped: Use C<validation_trouble()>!
 
 =head3 Validation Mode 'silent'
 
@@ -1405,12 +1449,14 @@ store available. No messages will be printed out.
 Your script (or this part of your script) will NOT die.
 
 It will continue work. In critical cases you should take
-care, that process will be stopped: Use validation_trouble()!
+care, that process will be stopped: Use C<validation_trouble()>!
 
 =head3 Validation Mode 'off'
 
 The validation methods just give back the value. They even don't
 process the call parameters of the validation routines.
+
+C<is_valid()> is also turned off and returns 1 for all calls.
 
 Be careful! Now you are playing with dynamite! But you are fast.
 If you explode, just try switch validation on, if you are still alive.
@@ -1431,19 +1477,19 @@ Having two parameter managements, switch between them by testing
 C<$Scalar::Validation::off>: 
 
   sub create_some_polynom {
-	  my ($max_potenz,
-	  ) = @_;
+      my ($max_potenz,
+      ) = @_;
 
-	  if ($Scalar::Validation::off) {
-		  local ($FSL::Validation::trouble_level) = 0;
+      if ($Scalar::Validation::off) {
+          local ($Scalar::Validation::trouble_level) = 0;
 
-		  $max_potenz = par maximum_potenz => -Range => [1,5] => Int => shift;
-		  # additional parameters ...
-		  
-		  p_end \@_;
-		  
-		  return undef if validation_trouble(); # fire exit, if validation does not die
-	  }
+          $max_potenz = par maximum_potenz => -Range => [1,5] => Int => shift;
+          # additional parameters ...
+          
+          p_end \@_;
+          
+          return undef if validation_trouble(); # fire exit, if validation does not die
+      }
 
       # --- run sub -------------------------------------------------
 
@@ -1460,9 +1506,104 @@ this variant if performance is a real problem for your sub.
 Be careful! You are still playing with dynamite! But you are fast.
 If you explode, just try switch validation on, if you are still alive.
 
+=head2 Traps
+
+  my $unvalidated  = par => value => Int => shift;   # value is just used without checking
+  my $string_shift = par    value => Int => shift => sub { "$_ is still 'shift!!'. Why?"};
+
+=head3 par => value
+
+  my $unvalidated  = par => value => Int => shift;   # value is just used without checking
+
+C<par, npar, validate, ...> are functions, not keywords. The mistake
+here is to use " => " instead of ",". Why? The special comma operator
+quotes the left argument of
+
+  par => value
+
+so you get
+
+  'par', value
+
+and now par is a string and not a function. You get the last value of
+the list, and that is shift! NO VALIDATION! So don't forget to write
+tests with invalid data to detect this trap.
+
+By using brackets
+
+  my $unvalidated  = par (value => Int => shift);
+
+you avoid this trap.
+
+=head3 shift => sub { ... }
+
+Another trap
+
+  my $string_shift = par    value => Int => shift => sub { "$_ is still 'shift!!'. Why?"};
+
+The mistake here is also to use " => " instead of ","
+
+  shift => sub { }
+
+It will be interpreted as
+
+  'shift', sub { }
+
+and so you get constant string C<'shift'> instead of the next value
+from parameter stack.
+
+Or if both traps are combined, you get the last argument, that may be
+a coderef.
+
+You cannot avoid this trap by safe coding, but it will be easy
+detected by unit testing.
+
 =head2 More Examples
 
-Have a look into Validation.t to see what else is possible
+Have a look into the examples directory or Scalar-Validation.t to see
+what else is possible.
+
+=head2 Comming Soon
+
+=head3 if_par()
+
+C<if_par> sets value only, if matching to rule. Otherwise returns undef.
+
+  my $file_option = if_par_named  (-file => Defined => \%options);
+
+or
+
+  my $file_option = if_par_indexed (file => Defined => shift);
+  
+  my $file_name   = if_par (file => FileName   => $file_option);
+  my $file_handle = if_par (file => FileHandle => $file_option);
+
+  if_par_end $file_option; # raises $trouble_level if $file_option is not Empty
+
+Both C<$file_name> and C<$file_handle>, one or none can be set, that
+depends on the rules.
+
+C<$file_option> is a hash containing keys C<-value, -matched (counter),
+-rules (string of all tried)>.
+
+C<if_par_end> checks that at least one rule fits.
+
+=head2 Comming Later
+
+Generating documentation out source using special implementations of
+
+  named_parameter
+  parameter
+  parameters_end
+
+=head1 SEE ALSO Moose, Moo and Type::Params
+
+Use C<Moose> if possible. If not possible, have a look to C<Moo> and C<Type::Params>.
+
+=head2 Possible reimplementation of Type::Params
+
+Possibly I started a reimplementation of C<Type::Params>. I'm just
+checking the differences.
 
 =head1 LICENSE AND COPYRIGHT
 

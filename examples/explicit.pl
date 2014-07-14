@@ -1,8 +1,9 @@
 # Perl
 #
-# Tests of TypeValidation
+# Example of Scalar::Validation,
+# using explicit in sub defined rules
 #
-# Wed Jun 25 13:32:12 2014
+# Ralf Peine, Sat Jul 12 12:49:47 2014
 
 $| = 1;
 
@@ -12,12 +13,19 @@ use warnings;
 use Scalar::Validation qw (:all);
 
 sub explicit {
+    local $Scalar::Validation::trouble_level = 0;
+
     my $p_bool = par p_bool => -Enum => [0 => '1']               => shift;
     my $p_123  = par p_123  => -Enum => {1 => 1, 2 => 1, 3 => 1} => shift;
-    my $p_free = par p_free => sub { $_ > 5 } => shift, sub { "$_ is not larger than 5" };
+    my $p_free = par p_free => sub { $_ > 5 } => shift,
+                               sub { "$_ is not larger than 5" };
 
+    # --- something left in parameters ? ---
     p_end \@_;
 
+    # --- stop if still running and some validations have failed ---
+    return undef if validation_trouble();
+	
     # --- run sub ------------
 
     print "explicit (p_bool = $p_bool, p_123 = $p_123, p_free = $p_free)";

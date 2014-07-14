@@ -23,4 +23,9 @@ Revision history for Perl extension Scalar::Validation.
 
 0.611  Thu Jul 10 11:35:21 2014
     - No functional changes
-	  - Remove examples of MANIFEST
+	  - Remove examples out of MANIFEST
+
+0.612  Mon Jul 14 10:42:39 2014
+    - "class" + "is_a" rule added
+	- update examples to use validation_trouble
+	- update POD

@@ -2,7 +2,7 @@
 #
 # Example of Scalar::Validation, indexed access by par ... shift
 #
-# Sat Jul  5 17:29:25 2014
+# Ralf Peine, Sat Jul 12 12:49:47 2014
 
 $| = 1;
 
@@ -12,12 +12,18 @@ use warnings;
 use Scalar::Validation qw (:all);
 
 sub indexed {
+    local $Scalar::Validation::trouble_level = 0;
+
     # --- define and scan parameters ------------------------------
     my $p_int   = par p_int   => Int   => shift;
     my $p_float = par p_float => Float => shift;
 
+    # --- something left in parameters ? ---
     parameters_end \@_;
 
+    # --- stop if still running and some validations have failed ---
+    return undef if validation_trouble();
+	
     # --- run sub -------------------------------------------------
     print  "indexed (p_int = $p_int , p_float = $p_float)\n";
 }

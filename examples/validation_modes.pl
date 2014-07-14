@@ -1,10 +1,10 @@
 # Perl
 #
-# Select Validation modes
+# Example of Scalar::Validation, Select Validation modes
 #
-# perl run_modes.pl (die|warn|ignore)
+# perl run_modes.pl (die|warn|silent|off)
 #
-# Wed Jun 25 13:32:12 2014
+# Ralf Peine, Sat Jul 12 13:07:15 2014
 
 $| = 1;
 
@@ -21,8 +21,10 @@ sub position {
 my $validation_mode = shift || 'die';
 
 {
-    print "# Switch to validation mode $validation_mode\n";
+    print "# - { - Start new block ================================\n";
+    print "# ----- Switch to validation mode $validation_mode -----\n\n";
 
+    local $Scalar::Validation::trouble_level = 0;
     local ($Scalar::Validation::fail_action, $Scalar::Validation::off)
 	= prepare_validation_mode($validation_mode => 1);
     
@@ -36,9 +38,18 @@ my $validation_mode = shift || 'die';
     
     position ('a4.1', 2);
     position ('a5', 2);
+
+    position ();
+    position (1);
+    position (1, 2, 3);
+
+    print "\n# ----- validation trouble in block:   ".validation_trouble()." -----\n";
+    print "# - } - Leave block ======================================\n";
 }
 
-print "\n# now leaving the block and returning to initial validation mode: 'die'.\n";
+print "# validation trouble outside of block: ".validation_trouble()." -----\n";
+print "\n# returning to initial validation mode: 'die'.\n";
+
 
 position ('a4.1', 2); # dies
 
