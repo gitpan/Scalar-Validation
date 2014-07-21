@@ -1,8 +1,8 @@
-Scalar-Validation version 0.601
+Scalar-Validation version 0.613
 ==============================
 
-Scalar::Validation makes validation of scalar values or function (sub)
-parameters easy, is fast and uses pure Perl:
+Scalar::Validation - Makes validation of scalar values or function
+(sub) parameters easy and uses pure Perl.
 
   my $param = par param => Int => shift;
 

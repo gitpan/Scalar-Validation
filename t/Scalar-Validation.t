@@ -304,6 +304,10 @@ is (is_valid (parameter => -Range => [1,3] => Float => 3.00000000), 1, " is_vali
 is (is_valid (parameter => -Range => [1,3] => Float => 4.00000001), 0, "!is_valid(-Range => [1,3] => Float => 4.00000001)"); 
 is (is_valid (parameter => -Range => [1,3] => Float => 'a'),        0, "!is_valid(-Range => [1,3] => Float => a         )");
 
+is (is_valid (parameter => equal_to   4   => Int    =>   4),        1, " is_valid(equal_to ( 4   => Int    => 4)");
+is (is_valid (parameter => equal_to   5.1 => Float  => 5.1),        1, " is_valid(equal_to ( 5.1 => Float  => 5.1)");
+is (is_valid (parameter => equal_to   'a' => String => 'a'),        1, " is_valid(equal_to ( 'a' => String => 'a')");
+
 is (is_valid (parameter => greater_than  4 => Int   => 5),          1, " is_valid(greater_than 4 => Int => 5)");
 is (is_valid (parameter => greater_than (4 => Float => 3.1)),       0, "!is_valid(greater_than (4 => Float => 3.1))");
 

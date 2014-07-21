@@ -4,12 +4,12 @@
 #
 # Simple rule based validation package for scalar values
 #
-# Ralf Peine, Mon Jul 14 10:46:53 2014
+# Ralf Peine, Mon Jul 21 16:28:11 2014
 #
 # More documentation at the end of file
 #------------------------------------------------------------------------------
 
-$VERSION = "0.612";
+$VERSION = "0.613";
 
 package Scalar::Validation;
 
@@ -22,7 +22,7 @@ our @EXPORT = qw();
 our @EXPORT_OK = qw (validate is_valid validate_and_correct npar named_parameter par parameter 
                      get_rules rule_known declare_rule delete_rule replace_rule enum Enum enum_explained Enum_explained
                      greater_than greater_equal less_than less_equal equal_to g_t g_e l_t l_e
-					 is_a
+                     is_a
                      convert_to_named_params parameters_end p_end
                      validation_trouble validation_messages get_and_reset_validation_messages prepare_validation_mode);
 
@@ -30,7 +30,7 @@ our %EXPORT_TAGS = (
         all => [qw(validate is_valid validate_and_correct npar named_parameter par parameter
                    get_rules rule_known declare_rule delete_rule replace_rule enum Enum enum_explained Enum_explained
                    greater_than greater_equal less_than less_equal equal_to g_t g_e l_t l_e
-				   is_a
+                   is_a
                    convert_to_named_params parameters_end p_end
                    validation_trouble validation_messages get_and_reset_validation_messages prepare_validation_mode)],
 );               
@@ -92,9 +92,9 @@ our $get_caller_info = $get_caller_info_default;
 #
 # ------------------------------------------------------------------------------
 my $non_blessed = {
-	REF   => 1,
-	ARRAY => 1,
-	HASH  => 1,
+    REF   => 1,
+    ARRAY => 1,
+    HASH  => 1,
 };
 
 my $special_rules;
@@ -110,7 +110,7 @@ my $get_content_subs;
 
 $rule_store = {
 
-        # --- This rules are needed for Validation.pm to work, don't delete or change! ---
+    # --- This rules are needed for Validation.pm to work, don't delete or change! ---
         
     Defined     =>   { -name    => 'Defined',
                        -where   => sub { defined $_ },
@@ -176,13 +176,15 @@ $rule_store = {
     },
     Class       =>   { -name    => 'Class',
                        -where   => sub { return 0 unless $_;
-										 my $type_name = ref($_);
-										 !$type_name || $non_blessed->{$type_name} ? 0: 1;
-					   },
+                                         my $type_name = ref($_);
+                                         !$type_name || $non_blessed->{$type_name} ? 0: 1;
+                       },
                        -message => sub { "value $_ is not a reference" },
                        -description => "Value is a reference and not a scalar.",
     },
 
+    # --- Some additional global rules --------------------
+        
     ExistingFile  => { -name    => 'ExistingFile',
                        -as      => 'Filled',
                        -where   => sub { -f $_ },
@@ -190,8 +192,6 @@ $rule_store = {
                        -description => "File with given file name has to exist"
     },
 
-    # --- Some additional global rules --------------------
-        
     Bool =>          { -name    => 'Bool',
                        -where   => sub { ref ($_) ? 0: 1 },
                        -message => sub { "value $_ is not a bool value" },
@@ -1033,16 +1033,12 @@ __END__
 
 =head1 NAME
 
-Scalar::Validation
-
-=head ABSTRACT
-
-Makes validation of scalar values or function (sub)
-parameters easy, is fast and uses pure Perl.
+Scalar::Validation - Makes validation of scalar values or function
+(sub) parameters easy and uses pure Perl.
 
 =head1 VERSION
 
-This documentation refers to version 0.612 of Scalar::Validation
+This documentation refers to version 0.613 of Scalar::Validation
 
 =head1 SYNOPSIS
 
@@ -1069,6 +1065,16 @@ This documentation refers to version 0.612 of Scalar::Validation
   my $int_6    = validate (int_6   => -Optional => -Or    => [Int => CodeRef => 0] =>    undef);
   my $enum_2   = validate (enum_2  => -Optional => -Enum  => {a => 1, b => 1, c => 1} => undef);
   my $range_1  = validate (range_1 => -Optional => -Range => [1,5] => Int =>             undef);
+
+  my $rounded  = validate_and_correct ([rounded => Int => 1.1],
+                                       {  -correction => sub {
+                                             my $float = par (rounded => Float => shift);
+                                             return int($float + 0.5) if $float > 0;
+                                             return int($float - 0.5);
+                                           },
+                                          -default => 0
+                                       });
+
 
 B<Just checks, never dies:>
 
@@ -1134,17 +1140,50 @@ B<Dynamic Rules For Comparison>
   is_valid (parameter => equal_to (4 => Float)  =>  4.0);  # valid,    compares as number
   is_valid (parameter => equal_to (4 => Int)    =>  4.0);  # valid !!, compares as number
 
+B<Dynamic Rules To Check Types>
+
   my $animal = par is_a  Animal => shift;
   my $person = par is_a (Person => shift);
   my $tree   = par is_a (Tree),    shift;
 
+B<Validation Modes>
+
+  local ($Scalar::Validation::fail_action, $Scalar::Validation::off)
+       = prepare_validation_mode('die');  
+  local ($Scalar::Validation::fail_action, $Scalar::Validation::off)
+       = prepare_validation_mode(warn => 1);
+
+  local $Scalar::Validation::fail_action = sub { my_log('Error', $@); return undef; }
+
 =head1 DESCRIPTION
 
-This class implements a fast and flexible validation for scalars.
-It is implemented functional to get speed and some problems using global rules for all ;).
+You should not use this module without reason.
 
-Possibly I started a reimplementation of C<Type::Params>. I'm just
-checking the differences.
+If possible, choose L<Moose>.
+
+If using L<Moo>, there is the pure Perl module L<Type::Params> which
+does not need be compiled. Or choose L<Kavorka> with nice syntax, but
+you need to compile the modules. Or use experimental type checks of
+Perl 5.20 .
+
+If that all is not possible or you want different run modes for
+validation, then you should take a look.
+
+This class implements a fast and flexible validation for scalars.  It
+is implemented functional to get speed and some problems using global
+rules for all ;).
+
+It is safer to use than L<Type::Params>, but slower.
+
+It is written to work well with antique Perl versions like 5.6 and
+5.8.
+
+It is also written to be used in antique Code written for such antique
+Perl versions. You can add it sub for sub. You can also validate
+single values, that are not call parameters. Thats the name is coming from.
+
+You can declare and test your own rules, give every process or sub in
+process its own rules, if you want.
 
 =head2 Validate Subs
 
@@ -1156,6 +1195,9 @@ Following validation functions exist:
 
   named_parameter(...);
     n_par(...);         # Alias for named_parameter()
+
+  # same as validate, but with option to correct invalid value
+  validate_and_correct(...);
 
   is_valid(...);
 
@@ -1202,6 +1244,10 @@ Without these subs you would have to implement for reading par_1:
 It could be done in one line, but this line will be complicated and
 not easy to understand. The key value is needed twice and that can
 cause Copy-Paste-Errors.
+
+=head3 validate_and_correct()
+
+Description is still missing, sorry ...
 
 =head2 Dies by error message
 
@@ -1259,9 +1305,10 @@ a block like this to store messages
 
 =head2 As parameter check for indexed arguments
 
-C<Scalar::Validation> can be also used a parameter check for unnamed and named parameters.
-C<parameters_end \@_;> ensures, that all parameters are processed.
-Otherwise it rises the usual validation error. Shorthand: C<p_end>.
+C<Scalar::Validation> can be also used a parameter check for unnamed
+and named sub parameters. C<parameters_end \@_;> ensures, that all
+parameters are processed. Otherwise it rises the usual validation
+error. Shorthand: C<p_end>.
 
   sub create_some_polynom {
       local ($Scalar::Validation::trouble_level) = 0;
@@ -1275,8 +1322,7 @@ Otherwise it rises the usual validation error. Shorthand: C<p_end>.
 
       # --- run sub -------------------------------------------------
 
-      my $polynom = '';
-      map { $polynom .= " + ".int (100*rand())."*x^".($max_potenz-$_); } (0..$max_potenz);
+      my $polynom = '';      map { $polynom .= " + ".int (100*rand())."*x^".($max_potenz-$_); } (0..$max_potenz);
 
       return $polynom;
   };
@@ -1332,6 +1378,7 @@ You can and should create your own rules, i.e.
       Positive =>  -as      => Int =>           # Parent rule is optional
                    -where   => sub { $_ >= 0 },
                    -message => sub { "value $_ is not a positive integer" },
+                   -description => "This rule checks if $_ >= 0 and is an Integer"
   );
 
   rule_known(Unknown  => 1); # returns 0 (false)
@@ -1363,6 +1410,41 @@ Same arguments as for declare_rule;
                      -where   => sub { $_ =< 0 },
                      -message => sub { "value $_ is not a negative integer or 0" },
   );
+
+=head3 Documentation Of Rules
+
+To get a html documentation (or text or csv) of all existing rules,
+you may use L<Report::Porf>, one of my other modules, like this:
+
+  use Report::Porf qw(:all);
+  use Scalar::Validation qw(:all);
+
+  my $rules_ref = get_rules();
+  my @rule_info = map { $rules_ref->{$_} } sort keys %$rules_ref;
+
+  auto_report(\@rule_info, "rule_info.html");
+
+All rules - also yours - are listed in the html file.
+
+=head3 Main Rules
+
+There are some main rules, that should not be changed by you, because
+they are used internally. If defined wrong, C<Scalar::Validation> may
+stop working or doing strange things...
+
+    Defined
+    Filled
+    Empty
+    Optional
+    String
+    Int
+    Even
+    Scalar
+    Ref
+    ArrayRef
+    HashRef
+    CodeRef
+    Class
 
 =head3 Special Rules
 
@@ -1399,6 +1481,13 @@ should use:
 
   my $v = validate v => my_type => new MyType();
 
+You can also define your own fail_action by:
+
+  local $Scalar::Validation::fail_action = sub { my_log('Error', $@); return undef; }
+
+to write validation messages into your own log system by using
+C<my_log(...);>. See L<Validation Modes> for details.
+
 =head3 Dealing with XSD
 
 In this case My::Validation should create rules out of XML datatypes
@@ -1413,6 +1502,10 @@ compatibility with old versions.
 And your Application or GUI doesn't need to know about it.
 
 =head2 Validation Modes
+
+Validation modes are selected by
+
+  local ($Scalar::Validation::fail_action, $Scalar::Validation::off) = prepare_validation_mode($mode);
 
 There are 4 predefined validation modes:
 
@@ -1509,7 +1602,7 @@ If you explode, just try switch validation on, if you are still alive.
 =head2 Traps
 
   my $unvalidated  = par => value => Int => shift;   # value is just used without checking
-  my $string_shift = par    value => Int => shift => sub { "$_ is still 'shift!!'. Why?"};
+  my $string_shift = par    value => Int => shift => sub { "$_ is still 'shift'!!. Why?"};
 
 =head3 par => value
 
@@ -1596,14 +1689,23 @@ Generating documentation out source using special implementations of
   parameter
   parameters_end
 
-=head1 SEE ALSO Moose, Moo and Type::Params
+=head1 SEE ALSO Moose, Moo, Type::Params and Kavorka
 
-Use C<Moose> if possible. If not possible, have a look to C<Moo> and C<Type::Params>.
+Use L<Moose> if possible. If not possible, have a look to L<Moo> and
+L<Type::Params>. Or choose L<Kavorka> with nice syntax, but you need
+to compile the modules. Or use experimental type checks of Perl 5.20 .
 
-=head2 Possible reimplementation of Type::Params
+=head2 Differences to Type::Params
 
-Possibly I started a reimplementation of C<Type::Params>. I'm just
-checking the differences.
+L<Type::Params> uses the C<state> pragma, which comes in Perl Version
+12. This is much faster than C<Scalar::Validation>, but cannot be run
+with earlier versions than Perl V12.
+
+C<Scalar::Validation> doesn't use C<state> and runs even with Perl
+V5.6, I tested it on sun.
+
+Also there is no validation mode in L<Type::Params>, it dies in case
+of validaiton failure.
 
 =head1 LICENSE AND COPYRIGHT
 

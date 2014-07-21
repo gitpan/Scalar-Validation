@@ -29,3 +29,7 @@ Revision history for Perl extension Scalar::Validation.
     - "class" + "is_a" rule added
 	- update examples to use validation_trouble
 	- update POD
+
+0.613  Mon Jul 21 16:28:32 2014
+    - added tests
+	- update documentation
