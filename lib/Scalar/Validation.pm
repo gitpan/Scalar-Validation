@@ -4,12 +4,12 @@
 #
 # Simple rule based validation package for scalar values
 #
-# Ralf Peine, Mon Jul 21 16:28:11 2014
+# Ralf Peine, Thu Sep  4 08:34:45 2014
 #
 # More documentation at the end of file
 #------------------------------------------------------------------------------
 
-$VERSION = "0.613";
+$VERSION = "0.614";
 
 package Scalar::Validation;
 
@@ -36,7 +36,7 @@ our %EXPORT_TAGS = (
 );               
 
 use Carp;
-use Data::Dumper;
+# use Data::Dumper;
 
 # ------------------------------------------------------------------------------
 #
@@ -44,7 +44,26 @@ use Data::Dumper;
 #
 # ------------------------------------------------------------------------------
 
+our $ignore_callers    = { __PACKAGE__ , 1 };
+
+our $ignore_caller_pattern;
+
+update_caller_pattern();
+
 _init_run_API();
+
+sub update_caller_pattern {
+    $ignore_caller_pattern = eval ("qr/^(".join("|",keys (%$ignore_callers)).")/o");
+}
+
+sub ignore_caller {
+    my $module_string = shift;
+
+    die "not a module string: '$module_string'" unless $module_string || $module_string =~ /^[\w:]+$/;
+    
+    $ignore_callers->{$module_string} = 1;
+    update_caller_pattern();
+}
 
 # ------------------------------------------------------------------------------
 #
@@ -53,12 +72,13 @@ _init_run_API();
 # ------------------------------------------------------------------------------
 
 my $croak_sub = sub { croak "Error: ",@_; };
+
 my $get_caller_info_default = sub {
     my ($module, $file_name, $line, $sub_name);
-    $sub_name     = 'Scalar::Validation';
+    $sub_name     = __PACKAGE__;
     my $call_level = 1;
-    
-    while ($sub_name =~ /^Scalar::Validation/) {
+
+    while ($sub_name =~ $ignore_caller_pattern) {
         ($module, $file_name, $line, $sub_name) = caller($call_level++);
         $sub_name = '' unless $sub_name;
     }
@@ -73,9 +93,10 @@ my $get_caller_info_default = sub {
 #
 # ------------------------------------------------------------------------------
 
-our $message_store   = undef; # local $Scalar::Validation::message_store = []; # to start storing messages
-our $trouble_level   = 0;     # to count failed validations. Not affected by is_valid(...)
-our $off             = 0;     # no validation checks if $off == 1
+our $message_store     = undef; # local $Scalar::Validation::message_store = []; # to start storing messages
+our $trouble_level     = 0;     # to count failed validations. Not affected by is_valid(...)
+our $off               = 0;     # no validation checks if $off == 1
+our $validate_defaults = 1;     # validate default values defined by -Default rule, if set
 
 # ------------------------------------------------------------------------------
 #
@@ -115,63 +136,75 @@ $rule_store = {
     Defined     =>   { -name    => 'Defined',
                        -where   => sub { defined $_ },
                        -message => sub { "value is not defined" },
+                       -owner   => 'CPAN',
                        -description => "Value is defined",
     },
     Filled      =>   { -name    => 'Filled',
                        -where   => sub { defined $_ and ref($_) eq '' and $_ ne '' },
                        -message => sub { "value is not set" },
+                       -owner   => 'CPAN',
                        -description => "Value is Scalar and defined and not empty ('')",
     },
     Empty       =>   { -name    => 'Empty',
                        -where   => sub { !defined $_ or $_ eq '' },
                        -message => sub { "value $_ has to be empty" },
+                       -owner   => 'CPAN',
                        -description => "Value is not defined or ''",
     },
     Optional    =>   { -name    => 'Optional',
                        -where   => sub { 1; },
                        -message => sub { "value is optional" },
+                       -owner   => 'CPAN',
                        -description => "Value is optional, cannot fail. Use as last entry in -Or rule.",
     },
     String      =>   { -name    => 'String',
                        -where   => sub { defined $_ and ref($_) eq '' },
                        -message => sub { "value $_ is not a string" },
+                       -owner   => 'CPAN',
                        -description => "Values is a Scalar and defined",
     },
     Int =>           { -name    => 'Int',
                        -as      => 'Filled',
                        -where   => sub { /^[\+\-]?\d+$/ },
                        -message => sub { "value $_ is not an integer" },
+                       -owner   => 'CPAN',
                        -description => "Value is an integer",
     },
     Even =>          { -name    => 'Even',
                        -as      => 'Int',
                        -where   => sub { $_ % 2 ? 0: 1; },
                        -message => sub { "value $_ is not an integer or not even"},
+                       -owner   => 'CPAN',
                        -description => 'Value is an even integer ($_ % 2 == 0)',
     },
     Scalar      =>   { -name    => 'Scalar',
                        -where   => sub { ref($_) eq '' },
                        -message => sub { "value $_ is not a scalar" },
+                       -owner   => 'CPAN',
                        -description => 'Value is a Scalar : ref ($_) eq ""',
     },
     Ref         =>   { -name    => 'Ref',
                        -where   => sub { $_ and ref($_) ne '' },
                        -message => sub { "value $_ is not a reference" },
+                       -owner   => 'CPAN',
                        -description => "Value is a reference and not a scalar.",
     },
     ArrayRef    =>   { -name    => 'ArrayRef',
                        -where   => sub { $_ and ref($_) eq 'ARRAY' },
                        -message => sub { "value $_ is not a array reference" },
+                       -owner   => 'CPAN',
                        -description => "Value is an Array reference.",
     },
     HashRef     =>   { -name    => 'HashRef',
                        -where   => sub { $_ and ref($_) eq 'HASH' },
                        -message => sub { "value $_ is not a hash reference" },
+                       -owner   => 'CPAN',
                        -description => "Value is a Hash reference.",
     },
     CodeRef     =>   { -name    => 'CodeRef',
                        -where   => sub { $_ and ref($_) eq 'CODE' },
                        -message => sub { "value $_ is not a code reference" },
+                       -owner   => 'CPAN',
                        -description => "Value is a Code reference.",
     },
     Class       =>   { -name    => 'Class',
@@ -180,6 +213,7 @@ $rule_store = {
                                          !$type_name || $non_blessed->{$type_name} ? 0: 1;
                        },
                        -message => sub { "value $_ is not a reference" },
+                       -owner   => 'CPAN',
                        -description => "Value is a reference and not a scalar.",
     },
 
@@ -189,42 +223,49 @@ $rule_store = {
                        -as      => 'Filled',
                        -where   => sub { -f $_ },
                        -message => sub { "$_ is not a valid name of an existing file"},
+                       -owner   => 'CPAN',
                        -description => "File with given file name has to exist"
     },
 
     Bool =>          { -name    => 'Bool',
                        -where   => sub { ref ($_) ? 0: 1 },
                        -message => sub { "value $_ is not a bool value" },
+                       -owner   => 'CPAN',
                        -description => "Value is a Scalar, all values including undef allowed",
     },
     PositiveInt =>   { -name    => 'PositiveInt',
                        -as      => 'Int',
                        -where   => sub { $_ >= 0 },
                        -message => sub { "value $_ is not a positive integer" },
+                       -owner   => 'CPAN',
                        -description => "Value is a positive integer",
     },
     NegativeInt =>   { -name    => 'NegativeInt',
                        -as      => 'Int',
                        -where   => sub { $_ < 0 },
                        -message => sub { "value $_ is not a negative integer" },
+                       -owner   => 'CPAN',
                        -description => "Value is a negative Integer",
     },
     Float =>         { -name    => 'Float',
                        -as      => 'Filled',
                        -where   => sub { /^[\+\-]?\d+(\.\d+)?([Ee][\+-]?\d+)?$/ },
                        -message => sub { "value $_ is not a float" },          
+                       -owner   => 'CPAN',
                        -description => "Value is a floating number with optional exponent",
     },
     PositiveFloat => { -name    => 'PositiveFloat',
                        -as      => 'Float',
                        -where   => sub { $_ > 0 },
                        -message => sub { "value $_ is not a positive float" },         
+                       -owner   => 'CPAN',
                        -description => "Value is a positive floating number with optional exponent",
     },
     NegativeFloat => { -name    => 'NegativeFloat',
                        -as      => 'Float',
                        -where   => sub { $_ < 0 },
                        -message => sub { "value $_ is not a negative float" },         
+                       -owner   => 'CPAN',
                        -description => "Value is a negative floating number with optional exponent",
     },
 };
@@ -248,10 +289,10 @@ $get_content_subs = {
 
 $special_rules = {
     -Optional => {
-        -value_position => '-9',
+        -value_position => 3,
         -code           => sub {
-            # my    $subject_info = shift || '';
-            # my    $rule_info    = shift;
+            # my  $subject_info = shift || '';
+            # my  $rule_info    = shift;
             local $_            = $_[2];
 
             # skip one param if special rule follows
@@ -263,6 +304,50 @@ $special_rules = {
         
             return $_ if !defined $_; # value not set
             return validate(@_);
+        }
+    },
+    -Default => {
+        -value_position => 4,
+        -code           => sub {
+            my  $subject_info = shift || '';
+            my  $default      = shift;
+            my  $rule_info    = shift;
+            # local $_          = $_[3];
+
+            my $value_idx = 0;
+
+            # --- skip x params if special rule follows ---
+            my $special_rule = $special_rules->{$rule_info};
+            if ($special_rule) {
+                my $special_idx = $special_rule->{-value_position};
+                $value_idx = $special_idx - 2 if $special_idx >= 0;
+            }
+
+            my $value = $_[$value_idx];
+
+            # --- value set, validate it ---
+            return validate($subject_info, $rule_info, @_)
+                if (defined $value && $value ne '');
+
+            # --- value not set ----
+            unless (defined $default) {
+                $trouble_level++;
+                $fail_action->("Rules: Default value for rule -Default not set!");
+                return $_;
+            }
+
+            if (ref($default) eq 'CODE') {
+                $default = $default->();
+            }
+
+            return $default unless $validate_defaults;
+
+            my @args = @_;
+            
+            $args[$value_idx] = $default;
+
+            # --- default has also to be validated!! ---
+            return validate($subject_info, $rule_info, @args)
         }
     },
     -And => {
@@ -728,10 +813,11 @@ sub declare_rule {
         => sub { "rule '$rule_name': message"._defined_or_not_message($_, " is not a code reference: $_");})
            || sub { "Value $_ is not valid for rule '$rule_name'" };
 
-    $rule_options{-as}           = npar (-as          => -Optional => String  => \%call_options);
-    $rule_options{-enum}         = npar (-enum        => -Optional => HashRef => \%call_options);
-    $rule_options{-name}         = npar (-name        => -Optional => String  => \%call_options) || $rule_name;
-    $rule_options{-description } = npar (-description => -Optional => String => \%call_options) || "Rule $rule_name";
+    $rule_options{-as}           = npar (-as          => -Optional => String           => \%call_options);
+    $rule_options{-enum}         = npar (-enum        => -Optional => HashRef          => \%call_options);
+    $rule_options{-name}         = npar (-name        => -Default => $rule_name        => String  => \%call_options);
+    $rule_options{-description } = npar (-description => -Default => "Rule $rule_name" => String  => \%call_options);
+    $rule_options{-owner}        = npar (-owner       => -Default => 'CPAN'            => String  => \%call_options);
         
     parameters_end (\%call_options);
     
@@ -898,17 +984,52 @@ sub validate_and_correct {
     ) = @_;
 
     my $correction_action = $options_ref->{-correction}; # action that does corrections in value
-    unless ( defined $validation_options_ref->[-1]) {
-        $validation_options_ref->[-1] = $options_ref->{-default} if exists $options_ref->{-default};
+
+	my $validation_options_copied = 0;
+	my $value_pos    = 2;
+	my $special_rule = $special_rules->{$validation_options_ref->[1]};
+	$value_pos = $special_rule->{-value_position} if $special_rule;
+
+    unless (defined $validation_options_ref->[$value_pos]) {
+		my $default = $options_ref->{-default};
+
+		if (defined $default && $value_pos >= 0) {
+			my @tmp_validation_options = @$validation_options_ref;
+			$validation_options_ref    = \@tmp_validation_options;
+			$validation_options_ref->[$value_pos] = $default;
+			$validation_options_copied = 1;
+		}
     }
 
     if ($correction_action) {
-        local ($fail_action) = sub {
-            s/^'//o;
-            s/'$//o;
-            $correction_action->($_);
-        };
-        return validate(@$validation_options_ref);
+		my $orig_fail_action = $fail_action;
+		my $correction_done  = 0;
+		my $result = undef;
+		{
+			local ($fail_action) = sub {
+				s/^'//o;
+				s/'$//o;
+				$correction_done = 1;
+				$correction_action->($_);
+				
+			};
+			$result = validate(@$validation_options_ref);
+		}
+		
+		if ($correction_done) {
+			# --- update arg vector by new value $result ---
+			if ($value_pos >= 0){
+				unless ($validation_options_copied) {
+					my @corrected_validation_options = @$validation_options_ref;
+					$validation_options_ref = \@corrected_validation_options;
+				}
+				$validation_options_ref->[$value_pos] = $result;
+			}
+		}
+		else {
+			my $print_result = defined ($result) ? "'$result'" : '<undef>';
+			return $result;
+		}
     }
     return validate(@$validation_options_ref);
 }
@@ -1038,7 +1159,7 @@ Scalar::Validation - Makes validation of scalar values or function
 
 =head1 VERSION
 
-This documentation refers to version 0.613 of Scalar::Validation
+This documentation refers to version 0.614 of Scalar::Validation
 
 =head1 SYNOPSIS
 
@@ -1066,13 +1187,15 @@ This documentation refers to version 0.613 of Scalar::Validation
   my $enum_2   = validate (enum_2  => -Optional => -Enum  => {a => 1, b => 1, c => 1} => undef);
   my $range_1  = validate (range_1 => -Optional => -Range => [1,5] => Int =>             undef);
 
+  my $float_1  = validate (float_1 => -Default => '1e1'  => Float                           => undef);
+  my $float_2  = validate (float_2 => -Default => '-3.1' => -And  => [Scalar => Float => 0] => undef);
+
   my $rounded  = validate_and_correct ([rounded => Int => 1.1],
                                        {  -correction => sub {
                                              my $float = par (rounded => Float => shift);
                                              return int($float + 0.5) if $float > 0;
                                              return int($float - 0.5);
                                            },
-                                          -default => 0
                                        });
 
 
@@ -1379,6 +1502,7 @@ You can and should create your own rules, i.e.
                    -where   => sub { $_ >= 0 },
                    -message => sub { "value $_ is not a positive integer" },
                    -description => "This rule checks if $_ >= 0 and is an Integer"
+                 # -owner   => 'CPAN'  # this is the default
   );
 
   rule_known(Unknown  => 1); # returns 0 (false)
@@ -1409,6 +1533,7 @@ Same arguments as for declare_rule;
       NegativeInt => -as      => Int =>           # Parent rule is optional
                      -where   => sub { $_ =< 0 },
                      -message => sub { "value $_ is not a negative integer or 0" },
+                     # -owner   => 'CPAN'  # this is the default
   );
 
 =head3 Documentation Of Rules
@@ -1452,6 +1577,7 @@ There are some special rules, that cannot be
 changed. Those rules start with an '-' char in front:
 
  -Optional    # value may be undefined. If not, use following rule
+ -Default     # if value not defined or eq '', use given default value instead
  -And         # all rules must be ok
  -Or          # at least one rule must be ok
  -Enum        # for easy defining enumeration on the fly, by array_ref or hash_ref
