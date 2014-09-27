@@ -40,4 +40,9 @@ Revision history for Perl extension Scalar::Validation.
 	- add ignore_caller_pattern for Carp
 	- add optional rule attribute -owner
 	- update documentation
+0.616  Sat Sep 27 12:46:43 2014
+    - added Meta Information Mode extract meta information
+      about called functions
+	- documentation still missing for Meta Infos
+    - update documentation
 	

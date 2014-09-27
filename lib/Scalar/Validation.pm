@@ -4,12 +4,12 @@
 #
 # Simple rule based validation package for scalar values
 #
-# Ralf Peine, Thu Sep  4 08:34:45 2014
+# Ralf Peine, Sat Sep 27 11:50:05 2014
 #
 # More documentation at the end of file
 #------------------------------------------------------------------------------
 
-$VERSION = "0.614";
+$VERSION = "0.616";
 
 package Scalar::Validation;
 
@@ -22,18 +22,23 @@ our @EXPORT = qw();
 our @EXPORT_OK = qw (validate is_valid validate_and_correct npar named_parameter par parameter 
                      get_rules rule_known declare_rule delete_rule replace_rule enum Enum enum_explained Enum_explained
                      greater_than greater_equal less_than less_equal equal_to g_t g_e l_t l_e
-                     is_a
-                     convert_to_named_params parameters_end p_end
-                     validation_trouble validation_messages get_and_reset_validation_messages prepare_validation_mode);
+                     is_a 
+                     p_start parameters_start convert_to_named_params parameters_end p_end
+                     validation_trouble get_validation_trouble_level add_validation_trouble
+                     validation_messages get_and_reset_validation_messages prepare_validation_mode
+                     meta_info_clear build_meta_info_for_module end_meta_info_gen get_meta_info
+);
 
 our %EXPORT_TAGS = (
         all => [qw(validate is_valid validate_and_correct npar named_parameter par parameter
                    get_rules rule_known declare_rule delete_rule replace_rule enum Enum enum_explained Enum_explained
                    greater_than greater_equal less_than less_equal equal_to g_t g_e l_t l_e
                    is_a
-                   convert_to_named_params parameters_end p_end
-                   validation_trouble validation_messages get_and_reset_validation_messages prepare_validation_mode)],
-);               
+                   p_start parameters_start convert_to_named_params parameters_end p_end
+                   validation_trouble get_validation_trouble_level add_validation_trouble
+                   validation_messages get_and_reset_validation_messages prepare_validation_mode
+                   meta_info_clear build_meta_info_for_module end_meta_info_gen get_meta_info
+)],);               
 
 use Carp;
 # use Data::Dumper;
@@ -45,14 +50,9 @@ use Carp;
 # ------------------------------------------------------------------------------
 
 our $ignore_callers    = { __PACKAGE__ , 1 };
-
 our $ignore_caller_pattern;
 
-update_caller_pattern();
-
-_init_run_API();
-
-sub update_caller_pattern {
+sub _update_caller_pattern {
     $ignore_caller_pattern = eval ("qr/^(".join("|",keys (%$ignore_callers)).")/o");
 }
 
@@ -65,21 +65,29 @@ sub ignore_caller {
     update_caller_pattern();
 }
 
+_update_caller_pattern();
+
+_init_private_calls();
+_init_run_API();
+
+# _init_doc_API();
+
 # ------------------------------------------------------------------------------
 #
 # default actions, not changable
 #
 # ------------------------------------------------------------------------------
 
-my $croak_sub = sub { croak "Error: ",@_; };
+our $call_info = '';
 
+my $croak_sub = sub { croak "Error: ",@_; };
 my $get_caller_info_default = sub {
     my ($module, $file_name, $line, $sub_name);
     $sub_name     = __PACKAGE__;
-    my $call_level = 1;
+    my $call_level_iter = 1;
 
     while ($sub_name =~ $ignore_caller_pattern) {
-        ($module, $file_name, $line, $sub_name) = caller($call_level++);
+        ($module, $file_name, $line, $sub_name) = caller($call_level_iter++);
         $sub_name = '' unless $sub_name;
     }
     
@@ -93,9 +101,9 @@ my $get_caller_info_default = sub {
 #
 # ------------------------------------------------------------------------------
 
-our $message_store     = undef; # local $Scalar::Validation::message_store = []; # to start storing messages
-our $trouble_level     = 0;     # to count failed validations. Not affected by is_valid(...)
-our $off               = 0;     # no validation checks if $off == 1
+our $message_store   = undef; # local $Scalar::Validation::message_store = []; # to start storing messages
+our $trouble_level   = 0;     # to count failed validations. Not affected by is_valid(...)
+our $off             = 0;     # no validation checks if $off == 1
 our $validate_defaults = 1;     # validate default values defined by -Default rule, if set
 
 # ------------------------------------------------------------------------------
@@ -122,6 +130,10 @@ my $special_rules;
 my $rule_store;
 my $get_content_subs;
 
+
+my $class_meta_model = {};
+my $doc_class_name;
+my $doc_class_method;
 
 # ------------------------------------------------------------------------------
 #
@@ -215,6 +227,14 @@ $rule_store = {
                        -message => sub { "value $_ is not a reference" },
                        -owner   => 'CPAN',
                        -description => "Value is a reference and not a scalar.",
+    },
+    ModuleName  =>   { -name    => 'ModuleName',
+                       -as      => Filled =>
+                       -where   => sub { /^\w+(::\w+)*$/;
+                       },
+                       -message => sub { "value $_ is not a module name like A::Ba::Cba" },
+                       -owner   => 'CPAN',
+                       -description => "Value is a module name like A::Ba::Cba.",
     },
 
     # --- Some additional global rules --------------------
@@ -386,7 +406,16 @@ $special_rules = {
             $fail_action->("Rules: No rule found in list to be validated") unless $rule_exists;
             
             return $orig_value;
-        }
+        },
+        -print_args => sub {
+            my    $rule_list    = shift;
+            
+	    delete $rule_list->[$#$rule_list] unless $rule_list->[$#$rule_list];
+	    my $arg_info = join (', ', @$rule_list);
+	    $arg_info = 'no argument informations' unless $arg_info;
+
+	    return "-And [$arg_info]";
+	}
     },
     -Or => {
         -value_position => 3,
@@ -458,7 +487,16 @@ $special_rules = {
             return $result if defined $result;
 
             return $orig_value;
-        }
+        },
+        -print_args => sub {
+            my    $rule_list    = shift;
+            
+	    delete $rule_list->[$#$rule_list] unless $rule_list->[$#$rule_list];
+	    my $arg_info = join (', ', @$rule_list);
+	    $arg_info = 'no argument informations' unless $arg_info;
+
+	    return "-Or [$arg_info]";
+	}
     },
     -Enum => {
         -value_position => 3,
@@ -487,7 +525,20 @@ $special_rules = {
 
             }
             return $orig_value;
-        }
+        },
+        -print_args => sub {
+            my $enum_ref = shift;
+
+	    my $arg_info = 'no argument informations';
+            my $arg_type = ref ($enum_ref);
+            if ($arg_type eq 'ARRAY') {
+		$arg_info = join (', ', @$enum_ref);
+            }
+            elsif ($arg_type eq 'HASH') {
+		$arg_info = join (', ', sort(keys(%$enum_ref)));
+            }
+	    return "Enum [$arg_info]";
+	}
     },
     -Range => {
         -value_position => 4,
@@ -545,7 +596,14 @@ $special_rules = {
             }
 
             return $orig_value;
-        }
+        },
+        -print_args => sub {
+            my    $range_ref    = shift;
+            my    $rule         = shift;
+	    my    $min          = $range_ref->[0];
+	    my    $max          = $range_ref->[1];
+	    return "Range [$min,$max] of type $rule";
+	}
     },
     -RefEmpty => {
         -value_position => 3,
@@ -566,7 +624,10 @@ $special_rules = {
                                               join (", ", @$content_ref)." ];" });
             
             return $count_results;
-        }
+        },
+        -print_args => sub {
+	    return "EmptyReference";
+	}
     },
 };
 
@@ -669,7 +730,7 @@ sub _do_fail {
 
     $_ = defined ($_) ? "'$_'" : '<undef>';
 
-    my $message = $get_caller_info->()."($subject_info): ".$message_ref->();
+    my $message = $get_caller_info->()."($call_info$subject_info): ".$message_ref->();
     push (@$message_store, $message) if $message_store;
 
     return $fail_action->($message);
@@ -682,14 +743,22 @@ sub _do_fail {
 # ------------------------------------------------------------------------------
 
 sub _init_run_API {
-    *npar      = *named_parameter;
+    *p_start          = *_do_parameters_start;
+    *parameters_start = *_do_parameters_start;
 
-    *parameter = *_do_validate;
-    *par       = *parameter;
+    *p_end            = *_do_parameters_end;
+    *parameters_end   = *_do_parameters_end;
 
-    *validate  = *_do_validate;
+    *npar             = *_do_named_parameter;
+    *named_parameter  = *_do_named_parameter;
 
-    *p_end     = *parameters_end;
+    *parameter        = *_do_validate_parameter;
+    *par              = *_do_validate_parameter;
+
+    *validate         = *_do_validate_call;
+    *is_valid         = *_do_is_valid;
+
+    *get_api_doc      = *get_api_documentation;
 
     *g_t       = *greater_than;
     *g_e       = *greater_equal;
@@ -698,26 +767,82 @@ sub _init_run_API {
 
 }
 
-sub convert_to_named_params {
-        my $array_ref = validate (args => ArrayRef => shift);
+sub _init_private_calls {
+    *_p_npar             = *_do_named_parameter;
+    *_p_named_parameter  = *_do_named_parameter;
+    
+    *_p_parameter        = *_do_validate_parameter;
+    *_p_par              = *_do_validate_parameter;
+    
+    *_p_validate         = *_do_validate_call;
+    *_p_is_valid         = *_do_is_valid;
+}
 
-        validate (arg_count => Even => scalar @$array_ref =>
+sub _get_meta_extraction_code {
+    my $module_name = shift;
+    return "
+    use $module_name;
+    *".$module_name."::p_start          = *".__PACKAGE__."::_start_sub_meta_extraction;
+    *".$module_name."::parameters_start = *".__PACKAGE__."::_start_sub_meta_extraction;
+                       
+    *".$module_name."::p_end            = *".__PACKAGE__."::_end_sub_meta_extraction;
+    *".$module_name."::parameters_end   = *".__PACKAGE__."::_end_sub_meta_extraction;
+                       
+    *".$module_name."::npar             = *".__PACKAGE__."::_sub_meta_extract_named_parameter;
+    *".$module_name."::named_parameter  = *".__PACKAGE__."::_sub_meta_extract_named_parameter;
+                       
+    *".$module_name."::parameter        = *".__PACKAGE__."::_sub_meta_extract_positional_parameter;
+    *".$module_name."::par              = *".__PACKAGE__."::_sub_meta_extract_positional_parameter;
+                       
+    *".$module_name."::validate         = *".__PACKAGE__."::_sub_meta_no_extraction;
+";
+}
+
+sub _reset_validation_code {
+    my $module_name = shift;
+    return "
+    use $module_name;
+    *".$module_name."::p_start          = *".__PACKAGE__."::_do_parameters_start;
+    *".$module_name."::parameters_start = *".__PACKAGE__."::_do_parameters_start;
+                       
+    *".$module_name."::p_end            = *".__PACKAGE__."::_do_parameters_end;
+    *".$module_name."::parameters_end   = *".__PACKAGE__."::_do_parameters_end;
+                       
+    *".$module_name."::npar             = *".__PACKAGE__."::_do_named_parameter;
+    *".$module_name."::named_parameter  = *".__PACKAGE__."::_do_named_parameter;
+                       
+    *".$module_name."::parameter        = *".__PACKAGE__."::_do_validate_parameter;
+    *".$module_name."::par              = *".__PACKAGE__."::_do_validate_parameter;
+                       
+    *".$module_name."::validate         = *".__PACKAGE__."::_do_validate_call;
+";
+}
+
+sub _do_parameters_start {
+    return $trouble_level;
+}
+
+sub convert_to_named_params {
+        my $array_ref = _p_validate (args => ArrayRef => shift);
+
+        _p_validate (arg_count => Even => scalar @$array_ref =>
                                   sub { "Even number of args needed to build a hash, but arg-count = $_" });
         return @$array_ref;
 }
 
-sub parameters_end {
-    my $container_ref = par (container_ref => -Or => [HashRef => 'ArrayRef'] => shift);
-    my $message_text  = par (message_text  => Scalar => shift) || "extra parameters found";
+sub _do_parameters_end {
+
+    my $container_ref = _p_par (container_ref => -Or => [HashRef => 'ArrayRef'] => shift);
+    my $message_text  = _p_par (message_text  => Scalar => shift) || "extra parameters found";
 
     my $container_type = ref ($container_ref);
     if ($container_type eq 'ARRAY') {
-        validate (parameters => sub { scalar @$container_ref == 0 } => $container_ref => sub { "$message_text: [ '".join ("', '", @$container_ref)."' ]"; });
+        _p_validate (parameters => sub { scalar @$container_ref == 0 } => $container_ref => sub { "$message_text: [ '".join ("', '", @$container_ref)."' ]"; });
         return scalar @$container_ref;
     }
     elsif ($container_type eq 'HASH') {
         my @arg_names = keys %$container_ref;
-        validate (parameters => sub { scalar @arg_names == 0 } => $container_ref => sub { "$message_text: [ '".join ("', '", @arg_names)."' ]"; });
+        _p_validate (parameters => sub { scalar @arg_names == 0 } => $container_ref => sub { "$message_text: [ '".join ("', '", @arg_names)."' ]"; });
         return scalar @arg_names;
     }
 
@@ -727,9 +852,154 @@ sub parameters_end {
 
 # ------------------------------------------------------------------------------
 #
+# Meta Information Mode
+#
+# ------------------------------------------------------------------------------
+
+sub meta_info_clear {
+    print "# Start API documentation ==============================\n";
+    $class_meta_model = {};
+}
+
+sub build_meta_info_for_module {
+    end_meta_info_gen();
+    $doc_class_name = _p_par(module_name => ModuleName => shift);
+    my $instance_creator = _p_par(instance_creation => -Optional => CodeRef => shift);
+
+    # --- run sub -------------------------------------------------
+
+    print "# Module: $doc_class_name; # ==============================\n";
+    $class_meta_model->{$doc_class_name} = {};
+    eval (_get_meta_extraction_code($doc_class_name)); print $@ if $@;
+    
+    $instance_creator = eval ('sub { return '.$doc_class_name.'->new(); }')
+	unless $instance_creator;
+
+    return $instance_creator->();
+}
+
+sub end_meta_info_gen {
+    eval (_reset_validation_code($doc_class_name)) if $doc_class_name; print $@ if $@;
+}
+
+sub get_meta_info {
+    return $class_meta_model;
+}
+
+sub _start_sub_meta_extraction { # parameters_start
+    $doc_class_method = $get_caller_info->();
+    $doc_class_method =~ s/.*\:\://og;
+    $class_meta_model->{$doc_class_name}->{$doc_class_method} = [];
+    # print "\tMethod: $doc_class_method  # ---------------------------------------\n";
+    return 0;
+}
+
+sub _end_sub_meta_extraction { # parameters_end
+    # print "\t# --- end method documentation ---\n";
+    $trouble_level++;
+    return 0;
+}
+
+sub _sub_meta_extract_named_parameter { # named_parameter
+    my $argument_info_str = _api_doc_get_argument_info(@_);
+    # print "\t\tNamed Parameter: $argument_info_str\n";
+    my $param_name = $_[0];
+    push (@{$class_meta_model->{$doc_class_name}->{$doc_class_method}}, "Named|$argument_info_str");
+
+    local ($Scalar::Validation::off) = 1;
+    return _do_named_parameter(@_);
+}
+
+sub _sub_meta_extract_positional_parameter { # parameter
+    my $argument_info_str = _api_doc_get_argument_info(@_);
+    # print "\t\tPositional Parameter: $argument_info_str\n";
+    push (@{$class_meta_model->{$doc_class_name}->{$doc_class_method}},  "Positional|$argument_info_str");
+
+    local ($Scalar::Validation::off) = 1;
+    $trouble_level++;
+    return _do_validate_parameter(@_);
+}
+
+sub _sub_meta_no_extraction { # validate
+    # print "_sub_meta_no_extraction ".join (', ', @_)."\n";
+    local ($Scalar::Validation::off) = 1;
+    $trouble_level++;
+    return _do_validate_call(@_);
+}
+
+sub _api_doc_get_argument_info {
+    my $name      = shift;
+    my $rule_info = shift;
+
+    unless ($rule_info) {
+        $trouble_level++;
+        $fail_action->("rule for validation not set");
+        return $_; # in case of fail action doesn't die
+    }
+
+    my $rule_ref = $rule_store->{$rule_info};
+
+    my $rule_info_string = 'No info for rule';
+
+    if ($rule_ref) {
+	$rule_info_string = $rule_ref->{-name};
+    }
+    else {
+	$rule_ref         = $special_rules->{$rule_info};
+	if ($rule_ref) {
+	    my $last_idx = scalar(@_);
+	    if ($last_idx >= 0) {
+		$rule_info_string = $rule_ref->{-print_args}->(@_) if $rule_ref;
+	    }
+	}
+    }
+    unless ($rule_ref) {
+        my $ref_type = ref ($rule_info);
+        
+        unless ($ref_type) {
+            $trouble_level++;
+	    my $error_message = "unknown rule '$rule_info' for validation";
+            $fail_action->($error_message);
+            return $error_message;
+        }
+        elsif ($ref_type eq 'HASH') { # given rule
+            $rule_ref = $rule_info;
+            # TODO: _p_validate rule ...
+        }
+        elsif ($ref_type eq 'CODE') { # where condition for rule
+            $rule_ref = {
+                -name => 'anonymous private rule'
+            };
+        }
+        else {
+            $trouble_level++;
+	    my $error_message = "Rules: cannot handle ref type '$ref_type' of rule '$rule_info' for validation";
+            $fail_action->$error_message();
+            return $error_message; # in case of fail action doesn't die
+        }
+	$rule_info_string = $rule_ref->{-name};
+    }
+
+    return "$name|$rule_info_string";
+
+}
+
+# ------------------------------------------------------------------------------
+#
 # Messages and Validation Mode
 #
 # ------------------------------------------------------------------------------
+
+sub add_validation_trouble {
+    my ($value
+        ) = @_;
+
+    $trouble_level += ($value || 1);
+}
+
+sub get_validation_trouble_level {
+    return $trouble_level;
+}
 
 sub validation_trouble {
     my $trouble_accepted = shift || 0;
@@ -752,7 +1022,7 @@ sub prepare_validation_mode {
     my $new_fail_action = $fail_action;
     my $new_off         = $off;
 
-    unless (is_valid(mode => -Enum => [ qw (die warn silent off) ] => $mode)) {
+    unless (_p_is_valid(mode => -Enum => [ qw (die warn silent off) ] => $mode)) {
         $trouble_level++;
         croak "prepare_validation_mode(): unknown mode for Scalar::Validation selected: '$mode'";
     }
@@ -794,31 +1064,31 @@ sub get_rules {
 }
 
 sub rule_known {
-    my $rule = par (rule => Filled => shift, sub { "rule to search not set" });
+    my $rule = _p_par (rule => Filled => shift, sub { "rule to search not set" });
 
     return $rule_store->{$rule} ? $rule : '';
 }
 
 sub declare_rule {
-    my $rule_name    = par (rule => Filled => shift, sub { "rule to declare not set" });
+    my $rule_name    = _p_par (rule => Filled => shift, sub { "rule to declare not set" });
     if (rule_known($rule_name)) { $fail_action->("rule '$rule_name': already defined"); }
         
     my %call_options = convert_to_named_params \@_;
     my %rule_options;
 
-    $rule_options{-where} = npar (-where => CodeRef => \%call_options
+    $rule_options{-where} = _p_npar (-where => CodeRef => \%call_options
         => sub { "rule '$rule_name': where condition"._defined_or_not_message($_, " is not a code reference: $_");});
 
-    $rule_options{-message} = npar (-message => -Optional => CodeRef => \%call_options
+    $rule_options{-message} = _p_npar (-message => -Optional => CodeRef => \%call_options
         => sub { "rule '$rule_name': message"._defined_or_not_message($_, " is not a code reference: $_");})
            || sub { "Value $_ is not valid for rule '$rule_name'" };
 
-    $rule_options{-as}           = npar (-as          => -Optional => String           => \%call_options);
-    $rule_options{-enum}         = npar (-enum        => -Optional => HashRef          => \%call_options);
-    $rule_options{-name}         = npar (-name        => -Default => $rule_name        => String  => \%call_options);
-    $rule_options{-description } = npar (-description => -Default => "Rule $rule_name" => String  => \%call_options);
-    $rule_options{-owner}        = npar (-owner       => -Default => 'CPAN'            => String  => \%call_options);
-        
+    $rule_options{-as}           = _p_npar (-as          => -Optional => String           => \%call_options);
+    $rule_options{-enum}         = _p_npar (-enum        => -Optional => HashRef          => \%call_options);
+    $rule_options{-name}         = _p_npar (-name        => -Default  => $rule_name        => String  => \%call_options);
+    $rule_options{-description } = _p_npar (-description => -Default  => "Rule $rule_name" => String  => \%call_options);
+    $rule_options{-owner}        = _p_npar (-owner       => -Default  => 'CPAN'            => String  => \%call_options);
+
     parameters_end (\%call_options);
     
     $rule_store->{$rule_name} = \%rule_options; 
@@ -827,15 +1097,15 @@ sub declare_rule {
 }
 
 sub delete_rule {
-    my $rule_name    = par (rule => Filled => shift, sub { "rule to delete not set" });
+    my $rule_name    = _p_par (rule => Filled => shift, sub { "rule to delete not set" });
 
-        validate (delete_rule => Defined => delete $rule_store->{$rule_name}
+        _p_validate (delete_rule => Defined => delete $rule_store->{$rule_name}
                                   => sub {"no rule $rule_name found to delete"});
         return $rule_name;
 }
 
 sub replace_rule {
-        my $rule_name    = par (rule => Filled => shift, sub { "rule to replace not set" });
+        my $rule_name    = _p_par (rule => Filled => shift, sub { "rule to replace not set" });
 
         return declare_rule(delete_rule($rule_name), @_);
 }
@@ -950,7 +1220,8 @@ sub less_equal {
 
 sub is_a {
     my $type = shift;
-    return ({ -as      => 'Class',
+    return ({ -name    => "IsClass_$type",
+              -as      => 'Class',
               -where   => sub { return $_->isa($type) },
               -message => sub { "$_ is not of class $type or derived from it."},
           },
@@ -965,7 +1236,7 @@ sub is_a {
 
 # --- helpful for tests ------------------------------------------------
 
-sub is_valid {
+sub _do_is_valid {
     my $valid = 1;
 
     local $fail_action   = sub { $valid = 0 };
@@ -985,58 +1256,59 @@ sub validate_and_correct {
 
     my $correction_action = $options_ref->{-correction}; # action that does corrections in value
 
-	my $validation_options_copied = 0;
-	my $value_pos    = 2;
-	my $special_rule = $special_rules->{$validation_options_ref->[1]};
-	$value_pos = $special_rule->{-value_position} if $special_rule;
+    my $validation_options_copied = 0;
+    my $value_pos    = 2;
+    my $special_rule = $special_rules->{$validation_options_ref->[1]};
+    $value_pos = $special_rule->{-value_position} if $special_rule;
 
     unless (defined $validation_options_ref->[$value_pos]) {
-		my $default = $options_ref->{-default};
+        my $default = $options_ref->{-default};
 
-		if (defined $default && $value_pos >= 0) {
-			my @tmp_validation_options = @$validation_options_ref;
-			$validation_options_ref    = \@tmp_validation_options;
-			$validation_options_ref->[$value_pos] = $default;
-			$validation_options_copied = 1;
-		}
+        if (defined $default && $value_pos >= 0) {
+            my @tmp_validation_options = @$validation_options_ref;
+            $validation_options_ref    = \@tmp_validation_options;
+            $validation_options_ref->[$value_pos] = $default;
+            $validation_options_copied = 1;
+        }
     }
 
     if ($correction_action) {
-		my $orig_fail_action = $fail_action;
-		my $correction_done  = 0;
-		my $result = undef;
-		{
-			local ($fail_action) = sub {
-				s/^'//o;
-				s/'$//o;
-				$correction_done = 1;
-				$correction_action->($_);
-				
-			};
-			$result = validate(@$validation_options_ref);
-		}
-		
-		if ($correction_done) {
-			# --- update arg vector by new value $result ---
-			if ($value_pos >= 0){
-				unless ($validation_options_copied) {
-					my @corrected_validation_options = @$validation_options_ref;
-					$validation_options_ref = \@corrected_validation_options;
-				}
-				$validation_options_ref->[$value_pos] = $result;
-			}
-		}
-		else {
-			my $print_result = defined ($result) ? "'$result'" : '<undef>';
-			return $result;
-		}
+        my $orig_fail_action = $fail_action;
+        my $correction_done  = 0;
+        my $result = undef;
+        {
+            local ($fail_action) = sub {
+                s/^'//o;
+                s/'$//o;
+                $correction_done = 1;
+                $correction_action->($_);
+                
+            };
+            $result = validate(@$validation_options_ref);
+        }
+        
+        if ($correction_done) {
+            # --- update arg vector by new value $result ---
+            if ($value_pos >= 0){
+                unless ($validation_options_copied) {
+                    my @corrected_validation_options = @$validation_options_ref;
+                    $validation_options_ref = \@corrected_validation_options;
+                }
+                $validation_options_ref->[$value_pos] = $result;
+            }
+        }
+        else {
+            my $print_result = defined ($result) ? "'$result'" : '<undef>';
+            return $result;
+        }
     }
+
     return validate(@$validation_options_ref);
 }
 
 # --- don't name key twice, deletes validated values out of hash -------------------------
-#   named_parameter
-sub named_parameter {
+#   _do_named_parameter
+sub _do_named_parameter {
         my $first_arg = shift;
         my $hash_ref;
         
@@ -1046,8 +1318,10 @@ sub named_parameter {
 
         my $args_ref = \@_;
 
-        unless (is_valid(key  => Scalar  => $first_arg)) {
-                $args_ref        = validate (validation_args => ArrayRef => $first_arg);
+        $call_info = '';
+
+        unless (_p_is_valid(key  => Scalar  => $first_arg)) {
+                $args_ref        = _p_validate (validation_args => ArrayRef => $first_arg);
                 $key             = shift @$args_ref;
                 $option_args_ref = shift;
         }
@@ -1055,13 +1329,13 @@ sub named_parameter {
                 $key = $first_arg;
         }
 
-        $key = validate (key  => Scalar  => $key);
+        $key = _p_validate (key  => Scalar  => $key);
 
         $hash_ref = pop @$args_ref;
         
-        unless (is_valid(option_ref => HashRef => $hash_ref)) {
-                $msg_ref  = validate (message_ref => CodeRef => $hash_ref);
-                $hash_ref = validate (option_ref  => HashRef => pop @$args_ref);
+        unless (_p_is_valid(option_ref => HashRef => $hash_ref)) {
+	    $msg_ref  = _p_validate (message_ref => CodeRef => $hash_ref);
+	    $hash_ref = _p_validate (option_ref  => HashRef => pop @$args_ref);
         }
 
         my $value = delete $hash_ref->{$key};
@@ -1074,15 +1348,27 @@ sub named_parameter {
                 }
         }
 
-        return validate ($key, @$args_ref, $value, $msg_ref);
+        return _p_validate ($key, @$args_ref, $value, $msg_ref);
 }
 
 # --- return value        if valid   ---------------
 # --- call   $fail_action if invalid ---------------
+
+sub _do_validate_parameter {
+    $call_info = 'parameter ';
+    goto &_do_validate;
+}
+
+sub _do_validate_call {
+    $call_info = '';
+    goto &_do_validate;
+}
+
 sub _do_validate {
     if ($off) {
         my $value_pos = 2;
-        $value_pos = $special_rules->{$_[1]}->{-value_position} if $special_rules->{$_[1]};
+	my $special_rule = $special_rules->{$_[1]};
+        $value_pos = $special_rule->{-value_position} if $special_rule;
         return $_[$value_pos] if $value_pos >= 0;
     }
 
@@ -1111,7 +1397,7 @@ sub _do_validate {
         }
         elsif ($ref_type eq 'HASH') { # given rule
             $rule_ref = $rule_info;
-            # TODO: validate rule ...
+            # TODO: _p_validate rule ...
         }
         elsif ($ref_type eq 'CODE') { # where condition for rule
             $rule_ref = {
@@ -1138,7 +1424,7 @@ sub _do_validate {
 
     unless ($parent_is_valid && $rule_ref->{-where}->()) {
         $_ = defined ($_) ? "'$_'" : '<undef>';
-        my $message = $get_caller_info->()."($subject_info): ".$test_message_ref->();
+        my $message = $get_caller_info->()."($call_info$subject_info): ".$test_message_ref->();
         push (@$message_store, $message) if $message_store;
         $trouble_level++;
         my $result = $fail_action->($message);
@@ -1159,7 +1445,7 @@ Scalar::Validation - Makes validation of scalar values or function
 
 =head1 VERSION
 
-This documentation refers to version 0.614 of Scalar::Validation
+This documentation refers to version 0.616 of Scalar::Validation
 
 =head1 SYNOPSIS
 
@@ -1398,11 +1684,12 @@ probably will run in trouble afterwards, when you use invalid data.
 
 Therefore do
 
-  local ($Scalar::Validation::trouble_level) = 0;
+  my $trouble_level = p_start;
 
   # add your code
 
-  return undef if validation_trouble(); # fire exit, if validation does not die
+  # fire exit, if validation does not die
+  return undef if validation_trouble($trouble_level);
 
 or something similar.
 
@@ -1429,19 +1716,22 @@ a block like this to store messages
 =head2 As parameter check for indexed arguments
 
 C<Scalar::Validation> can be also used a parameter check for unnamed
-and named sub parameters. C<parameters_end \@_;> ensures, that all
-parameters are processed. Otherwise it rises the usual validation
-error. Shorthand: C<p_end>.
+and named sub parameters. C<parameters_start> (Shorthand: C<p_start>)
+starts parameter validation and gives back current trouble
+level. C<parameters_end \@_;> ensures, that all parameters are
+processed. Otherwise it rises the usual validation error. Shorthand:
+C<p_end>.
 
   sub create_some_polynom {
-      local ($Scalar::Validation::trouble_level) = 0;
+      my $trouble_level = p_start;
 
       my $max_potenz = par maximum_potenz => -Range => [1,5] => Int => shift;
       # additional parameters ...
 
       p_end \@_;
 
-      return undef if validation_trouble(); # fire exit, if validation does not die
+      # fire exit, if validation does not die
+      return undef if validation_trouble($trouble_level);
 
       # --- run sub -------------------------------------------------
 
@@ -1470,7 +1760,7 @@ Named arguments can also be handled. This needs more runtime than the indexed va
 C<convert_to_named_params()> does a safe conversion by C<validate()>.
 
   sub create_some_polynom_named {
-      local ($Scalar::Validation::trouble_level) = 0;
+      my $trouble_level = p_start;
 
       my %pars = convert_to_named_params \@_;
 
@@ -1479,7 +1769,8 @@ C<convert_to_named_params()> does a safe conversion by C<validate()>.
 
       parameters_end \%pars;
 
-      return undef if validation_trouble(); # fire exit, if validation does not die
+      # fire exit, if validation does not die
+      return undef if validation_trouble($trouble_level);
 
       # --- run sub -------------------------------------------------
 
@@ -1501,8 +1792,8 @@ You can and should create your own rules, i.e.
       Positive =>  -as      => Int =>           # Parent rule is optional
                    -where   => sub { $_ >= 0 },
                    -message => sub { "value $_ is not a positive integer" },
+                   -owner   => 'Me'             # Use your own name
                    -description => "This rule checks if $_ >= 0 and is an Integer"
-                 # -owner   => 'CPAN'  # this is the default
   );
 
   rule_known(Unknown  => 1); # returns 0 (false)
@@ -1533,7 +1824,6 @@ Same arguments as for declare_rule;
       NegativeInt => -as      => Int =>           # Parent rule is optional
                      -where   => sub { $_ =< 0 },
                      -message => sub { "value $_ is not a negative integer or 0" },
-                     # -owner   => 'CPAN'  # this is the default
   );
 
 =head3 Documentation Of Rules
@@ -1700,14 +1990,15 @@ C<$Scalar::Validation::off>:
       ) = @_;
 
       if ($Scalar::Validation::off) {
-          local ($Scalar::Validation::trouble_level) = 0;
+          my $trouble_level = p_start;
 
           $max_potenz = par maximum_potenz => -Range => [1,5] => Int => shift;
           # additional parameters ...
           
           p_end \@_;
           
-          return undef if validation_trouble(); # fire exit, if validation does not die
+          # fire exit, if validation does not die
+          return undef if validation_trouble($trouble_level);
       }
 
       # --- run sub -------------------------------------------------

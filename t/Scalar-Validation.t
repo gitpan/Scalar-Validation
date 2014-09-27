@@ -2,7 +2,7 @@
 #
 # Tests of Scalar::Validation
 #
-# Mon Jul 14 10:46:20 2014
+# Sat Sep 27 12:26:36 2014
 
 use strict;
 use warnings;
@@ -64,22 +64,20 @@ is (declare_rule (
     )) => align1 => "declare_rule (align1)");
 
 is (declare_rule (
-    Blubber => -as          => 'Bla',
-               -where       => sub { $_ < 0 },
-               -message     => sub { "value $_ is not a negative integer" },
-	           -description => 'value is a negative integer and not 0',
-               -owner       => 'me')
-                => Blubber  => "declare_rule (Blubber)");
+    Blubber => -as      => 'Bla',
+               -where   => sub { $_ < 0 },
+               -message => sub { "value $_ is not a negative integer" })
+                => Blubber => "declare_rule (Blubber)");
 
 is (declare_rule (
     Any => -where   => sub { 1; },
            -message => sub { "No problem!!"})
-                => Any => "declare_rule (Any)");
+           => Any => "declare_rule (Any)");
     
 is (declare_rule (
     Wrong => -where   => sub { 0; },
              -message => sub { "Every time a problem!!"})
-                => Wrong => "declare_rule (Wrong)");
+             => Wrong => "declare_rule (Wrong)");
 
 is (rule_known(align  => 1) => align => "rule_known(align)  = 'align'");
 is (rule_known(blabla => 1) => ''    => "rule_known(blabla) = ''");
@@ -88,15 +86,15 @@ is (rule_known(0)           => ''    => "rule_known(0)      = ''");
 declare_rule (
     Blub1 => -as      => 'Int',
              -where   => sub { $_ < 0 },
-        -message => sub { "value $_ is not a negative integer" });
+             -message => sub { "value $_ is not a negative integer" });
 
 is (is_valid (blub1 => Blub1 => -1) => 1 => "Test rule Blub1");
 
 is (replace_rule (
     Blub1 => -as      => 'Int',
              -where   => sub { $_ > 0 },
-                 -message => sub { "value $_ is not a positive integer" })
-                => Blub1 => "replace_rule (Blub1 => ...)");
+             -message => sub { "value $_ is not a positive integer" })
+             => Blub1 => "replace_rule (Blub1 => ...)");
 
 is (is_valid (blub1 => Blub1 => 1) => 1 => "Test replaced rule Blub1");
 
@@ -248,11 +246,10 @@ is (validate (parameter => -And => [Optional => 0], undef),               undef,
 is (validate (parameter => -And => [Optional => 0], 123),                   123, "(-And => [Optional  => 0] => 123)");
 is (validate (parameter => -Optional => -And => [Int => 'Float'], undef),  undef, "(-Optional => -And => [Int => 'Float'] => undef)");
 is (validate (parameter => -Optional => -And => [Int => 'Float'], 123),      123, "(-Optional => -And => [Int => 'Float'] => 123)");
-
-is (validate (parameter => -Default => 345 => Int =>                    undef),    345, "(-Default => 345 => Int                      => undef)");
-is (validate (parameter => -Default => 345 => -And => [Int => 'Float'], 123),      123, "(-Default => 345 => -And => [Int => 'Float'] => 123 (default))");
-is (validate (parameter => -Default => 345 => -And => [Int => 'Float'], undef),    345, "(-Default => 345 => -And => [Int => 'Float'] => undef)");
-is (validate (parameter => -Default => 345 => -And => [Int => 'Float'], 123),      123, "(-Default => 345 => -And => [Int => 'Float'] => 123)");
+is (validate (parameter => -Default => 456 => -And => [Int => 'Float'], undef), 456, "(-Default => 456 => -And => [Int => 'Float'] => undef) => 456");
+is (validate (parameter => -Default => 456 => -And => [Int => 'Float'],    ''), 456, "(-Default => 456 => -And => [Int => 'Float'] =>    '') => 456");
+is (validate (parameter => -Default => 456 => -And => [Int => 'Float'],     0),   0, "(-Default => 456 => -And => [Int => 'Float'] =>     0) =>   0");
+is (validate (parameter => -Default => 456 => -And => [Int => 'Float'],   123), 123, "(-Default => 456 => -And => [Int => 'Float'] =>   123) => 123");
 
 is (validate (parameter => -Or => [Int => CodeRef => 0], 123),               123, "(-Or => [Int => CodeRef => 0], 123)");
 ok (validate (parameter => -Or => [Int => CodeRef => 0], sub { 0; }),             "(-Or => [Int => CodeRef => 0], sub)");
@@ -353,6 +350,9 @@ is (is_valid (parameter => is_a Bla        => []),         0, "!is_valid(is_a Bl
 is (is_valid (parameter => is_a Bla        => {}),         0, "!is_valid(is_a Bla        => {})");
 is (is_valid (parameter => is_a Bla        => $fh),        0, '!is_valid(is_a Bla        => $fh)');
 
+is (is_valid (parameter => Class => $fh), 1, ' is_valid(Class => $fh)');
+is (is_valid (parameter => Class => 123), 0, '!is_valid(Class => 123)');
+
 is (is_valid (free_where_greater_zero => sub { $_ && $_ > 0} => 2),  1, ' is_valid (free => sub { $_ && $_ > 0} => 2');
 is (is_valid (free_where_greater_zero => sub { $_ && $_ > 0} => 0),  0, ' is_valid (free => sub { $_ && $_ > 0} => 0');
 
@@ -379,7 +379,7 @@ is (validate_and_correct ([parameter => Float => '123.1a'],
 is (validate_and_correct ([parameter => Float => undef],
                                                   {-default => 3.14159,
                                                    -correction => sub { return $1 if /([\.\d]+)/; }
-                                           }), 3.14159, "validate_and_correct ([parameter => ([Float => undef]  {-default => ... -correction => ...}");
+                                           }), 3.14159, "validate_and_correct ([parameter => ([Float => undef]    {-default => ... -correction => ...}");
 
 is (validate_and_correct ([parameter => Float => undef],
                                                   {-default => '123.1a',
@@ -653,7 +653,7 @@ throws_ok { validate not_empty => -RefEmpty => sub {}; }
         "detect not valid:  validate (... => -RefEmpty => SubRef";
 
 throws_ok { validate (parameter => -Or => [Int => sub { $_ > 12 } => 0] => 2.1
-		      =>  sub { "$_ is not (Int or greater than 12)" })
+                      =>  sub { "$_ is not (Int or greater than 12)" })
 } qr/'2.1' is not \(Int or greater than 12\)/,
     '-Or => [Int => sub { $_ > 12 } => 0],  2.1)';
 
@@ -679,23 +679,23 @@ throws_ok { my %args = convert_to_named_params [ bla => 1 => 2 ] }
 my $old_trouble = validation_trouble();
 
 {
-	local $Scalar::Validation::trouble_level = 0;
+        local $Scalar::Validation::trouble_level = 0;
 
-	eval { my $v = par v => Int => 'ab'; };
-	is (validation_trouble(), 1, "validation_trouble() == 1");
-	
-	eval { my $v = par v => Int => 'ab'; };
-	is (validation_trouble(), 2, "validation_trouble() == 2");
+        eval { my $v = par v => Int => 'ab'; };
+        is (validation_trouble(), 1, "validation_trouble() == 1");
+        
+        eval { my $v = par v => Int => 'ab'; };
+        is (validation_trouble(), 2, "validation_trouble() == 2");
 
-	eval { my $v = par v => Int => 'ab'; };
-	is (validation_trouble(), 3, "validation_trouble() == 3");
+        eval { my $v = par v => Int => 'ab'; };
+        is (validation_trouble(), 3, "validation_trouble() == 3");
 }
 
 is (validation_trouble(), $old_trouble, "validation_trouble() == $old_trouble (\$old_trouble)");
 
 # --- next tests are important for testing -----------------------------------
 lives_ok {
-	my $fail_message = '';
+        my $fail_message = '';
     local ($Scalar::Validation::fail_action)   = sub { $fail_message = "Not valid message: value was $_";
                                                                                                            s/^'//o; s/'$//o; return $_; };
     local ($Scalar::Validation::message_store) = [];
@@ -703,9 +703,9 @@ lives_ok {
     my $messages = validation_messages();
     is (scalar @$messages, 1, "1 message in message store afterwards");
     is ($messages->[0], "Test::Exception::lives_ok(my_param): value '-1' is not a positive integer",
-		"stored message: \"value '-1' is not a positive integer\"");
-	is ($fail_message, "Not valid message: value was '-1'",
-		'$fail_message set by $fail_action->(): '."Not valid message: value was '-1'");
+                "stored message: \"value '-1' is not a positive integer\"");
+        is ($fail_message, "Not valid message: value was '-1'",
+                '$fail_message set by $fail_action->(): '."Not valid message: value was '-1'");
 } "does not die with own fail action";
 
 throws_ok {
@@ -726,41 +726,17 @@ lives_ok {
     is (validate (parameter => PositiveInt => '-1'), '-1', "off: detect not valid: (PositiveInt => '-1')");
 } "does not die with own fail action";
 
-# ---- warn and default test ----------
-lives_ok {
-    local ($Scalar::Validation::fail_action, $Scalar::Validation::off)   = prepare_validation_mode(warn => 1);
-
-	validate (int_4   => -Default => 0 => Int    =>                             undef);
-	validate (int_5   => -Default => 1 => -And   => [Scalar => Int => 0] =>     undef);
-	validate (int_6   => -Default => 2 => -Or    => [Int => CodeRef => 0] =>    undef);
-	validate (enum_2  => -Default => 3 => -Enum  => {a => 1, b => 1, c => 1} => undef);
-	validate (range_1 => -Default => 4 => -Range => [1,5] => Int =>             undef);
-	
-	validate (range_1 => -Default => 5 => -Range => [1,5] => Int =>             '');
-
-	validate (int_7   => -Default => a2 => Int   => undef);
-
-
-} "does not die while validation warn and -Default => x used and value = undef";
-
-# --- don't die using invalid default -------------------------------------
-lives_ok {
-	local ($Scalar::Validation::validate_defaults) = 0;
-
-	validate (int_8   => -Default => -a2 => Int   => undef);
-} "does not die while using invalid default using validate_defaults = 0";
-
 # ---- warn and optional test ----------
 lives_ok {
     local ($Scalar::Validation::fail_action, $Scalar::Validation::off)   = prepare_validation_mode(warn => 1);
 
-	validate (int_4   => -Optional => Int    =>                             undef);
-	validate (int_5   => -Optional => -And   => [Scalar => Int => 0] =>     undef);
-	validate (int_6   => -Optional => -Or    => [Int => CodeRef => 0] =>    undef);
-	validate (enum_2  => -Optional => -Enum  => {a => 1, b => 1, c => 1} => undef);
-	validate (range_1 => -Optional => -Range => [1,5] => Int =>             undef);
-	
-	validate (range_1 => -Optional => -Range => [1,5] => Int =>             '');
+        validate (int_4   => -Optional => Int    =>                             undef);
+        validate (int_5   => -Optional => -And   => [Scalar => Int => 0] =>     undef);
+        validate (int_6   => -Optional => -Or    => [Int => CodeRef => 0] =>    undef);
+        validate (enum_2  => -Optional => -Enum  => {a => 1, b => 1, c => 1} => undef);
+        validate (range_1 => -Optional => -Range => [1,5] => Int =>             undef);
+
+        validate (range_1 => -Optional => -Range => [1,5] => Int =>             '');
 
 } "does not die while validation warn and -Optional used and value = undef";
 
@@ -768,12 +744,12 @@ lives_ok {
 lives_ok {
     local ($Scalar::Validation::fail_action, $Scalar::Validation::off)   = prepare_validation_mode(silent => 1);
 
-	validate (int_4   => -Optional => Int    =>                             undef);
-	validate (int_5   => -Optional => -And   => [Scalar => Int => 0] =>     undef);
-	validate (int_6   => -Optional => -Or    => [Int => CodeRef => 0] =>    undef);
-	validate (enum_2  => -Optional => -Enum  => {a => 1, b => 1, c => 1} => undef);
-	validate (range_1 => -Optional => -Range => [1,5] => Int =>             undef);
-	
+        validate (int_4   => -Optional => Int    =>                             undef);
+        validate (int_5   => -Optional => -And   => [Scalar => Int => 0] =>     undef);
+        validate (int_6   => -Optional => -Or    => [Int => CodeRef => 0] =>    undef);
+        validate (enum_2  => -Optional => -Enum  => {a => 1, b => 1, c => 1} => undef);
+        validate (range_1 => -Optional => -Range => [1,5] => Int =>             undef);
+
 } "does not die while validation silent and -Optional used and value = undef";
 
 # ---- silent and optional test of '' ----------
@@ -781,17 +757,17 @@ lives_ok {
     local ($Scalar::Validation::fail_action, $Scalar::Validation::off)   = prepare_validation_mode(silent => 1);
     local ($Scalar::Validation::message_store) = [];
 
-	# --- creates validation error message ----
-	validate (range_1 => -Optional => -Range => [1,5] => Int =>             '');
-	
-	like (validation_messages()->[0], qr/value '' is not an integer/o,
-		  "detects emtpy string is not int: validate(-Optional => -Range => [1,5] => Int => '')");
-	
-	like (validation_messages(-clear)->[0], qr/value '' is not an integer/o,
-		  "validation_messages(-clear) of validate(-Optional => -Range => [1,5] => Int => '')");
-	
-	is (scalar @{validation_messages(-clear)}, 0,
-		"validation_messages(-clear) ==> empty list");
+        # --- creates validation error message ----
+        validate (range_1 => -Optional => -Range => [1,5] => Int =>             '');
+
+        like (validation_messages()->[0], qr/value '' is not an integer/o,
+                "detects emtpy string is not int: validate(-Optional => -Range => [1,5] => Int => '')");
+
+        like (validation_messages(-clear)->[0], qr/value '' is not an integer/o,
+                "validation_messages(-clear) of validate(-Optional => -Range => [1,5] => Int => '')");
+
+        is (scalar @{validation_messages(-clear)}, 0,
+                "validation_messages(-clear) ==> empty list");
         
 } "does not die while validation silent and optional test of ''";
 
@@ -799,25 +775,25 @@ lives_ok {
 lives_ok {
     local ($Scalar::Validation::message_store) = [];
 
-	# --- creates validation error message ----
-	is_valid (range_1 => -Optional => -Range => [1,5] => Int =>             '');
-	
-	# diag (@{validation_messages()});
-	like (validation_messages()->[0], qr/value '' is not an integer/o,
-		  "detects emtpy string is not int: is_valid(-Optional => -Range => [1,5] => Int => '')");
+        # --- creates validation error message ----
+        is_valid (range_1 => -Optional => -Range => [1,5] => Int =>             '');
+
+        # diag (@{validation_messages()});
+        like (validation_messages()->[0], qr/value '' is not an integer/o,
+                "detects emtpy string is not int: is_valid(-Optional => -Range => [1,5] => Int => '')");
 
 } "does not die while is_valid optional test of ''";
 
 # ---- off and optional test ----------
 lives_ok {
     local ($Scalar::Validation::fail_action, $Scalar::Validation::off)   = prepare_validation_mode(off => 1);
-	
-	validate (int_4   => -Optional => Int    =>                             undef);
-	validate (int_5   => -Optional => -And   => [Scalar => Int => 0] =>     undef);
-	validate (int_6   => -Optional => -Or    => [Int => CodeRef => 0] =>    undef);
-	validate (enum_2  => -Optional => -Enum  => {a => 1, b => 1, c => 1} => undef);
-	validate (range_1 => -Optional => -Range => [1,5] => Int =>             undef);
-	
+
+        validate (int_4   => -Optional => Int    =>                             undef);
+        validate (int_5   => -Optional => -And   => [Scalar => Int => 0] =>     undef);
+        validate (int_6   => -Optional => -Or    => [Int => CodeRef => 0] =>    undef);
+        validate (enum_2  => -Optional => -Enum  => {a => 1, b => 1, c => 1} => undef);
+        validate (range_1 => -Optional => -Range => [1,5] => Int =>             undef);
+
 } "does not die while validation off  and -Optional used and value = undef";
 
 # --- reset to previous behavior -------------------
