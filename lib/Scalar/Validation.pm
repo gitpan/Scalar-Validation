@@ -4,12 +4,12 @@
 #
 # Simple rule based validation package for scalar values
 #
-# Ralf Peine, Sat Sep 27 11:50:05 2014
+# Ralf Peine, Sat Oct 25 15:10:22 2014
 #
 # More documentation at the end of file
 #------------------------------------------------------------------------------
 
-$VERSION = "0.616";
+$VERSION = "0.700";
 
 package Scalar::Validation;
 
@@ -26,7 +26,7 @@ our @EXPORT_OK = qw (validate is_valid validate_and_correct npar named_parameter
                      p_start parameters_start convert_to_named_params parameters_end p_end
                      validation_trouble get_validation_trouble_level add_validation_trouble
                      validation_messages get_and_reset_validation_messages prepare_validation_mode
-                     meta_info_clear build_meta_info_for_module end_meta_info_gen get_meta_info
+                     meta_info_clear build_meta_info_for_module end_meta_info_gen get_meta_info list_meta_info
 );
 
 our %EXPORT_TAGS = (
@@ -37,7 +37,7 @@ our %EXPORT_TAGS = (
                    p_start parameters_start convert_to_named_params parameters_end p_end
                    validation_trouble get_validation_trouble_level add_validation_trouble
                    validation_messages get_and_reset_validation_messages prepare_validation_mode
-                   meta_info_clear build_meta_info_for_module end_meta_info_gen get_meta_info
+                   meta_info_clear build_meta_info_for_module end_meta_info_gen get_meta_info list_meta_info
 )],);               
 
 use Carp;
@@ -324,7 +324,14 @@ $special_rules = {
         
             return $_ if !defined $_; # value not set
             return validate(@_);
-        }
+        },
+	-print_args => sub {
+	    eval {
+		my $rule    = shift;
+		
+		return "-Optional [$rule]";
+	    }
+	}
     },
     -Default => {
         -value_position => 4,
@@ -368,7 +375,15 @@ $special_rules = {
 
             # --- default has also to be validated!! ---
             return validate($subject_info, $rule_info, @args)
-        }
+        },
+	-print_args => sub {
+	    eval {
+		my $default = shift;
+		my $rule    = shift;
+		
+		return "-Default = '$default' [$rule]";
+	    }
+	}
     },
     -And => {
         -value_position => 3,
@@ -868,8 +883,9 @@ sub build_meta_info_for_module {
 
     # --- run sub -------------------------------------------------
 
-    print "# Module: $doc_class_name; # ==============================\n";
+    # print "# Module: $doc_class_name; # ==============================\n";
     $class_meta_model->{$doc_class_name} = {};
+    $class_meta_model->{$doc_class_name}->{subs} = {};
     eval (_get_meta_extraction_code($doc_class_name)); print $@ if $@;
     
     $instance_creator = eval ('sub { return '.$doc_class_name.'->new(); }')
@@ -886,10 +902,38 @@ sub get_meta_info {
     return $class_meta_model;
 }
 
+sub list_meta_info {
+    my @meta_info_list;
+
+    foreach my $pm (sort (keys (%$class_meta_model))) {
+	my $subs     = $class_meta_model->{$pm}->{subs};
+
+	foreach my $sub_name (sort (keys (%$subs))) {
+	    my $parameters = $subs->{$sub_name}->{params};
+	    my %sub_info = (module => $pm, 
+			    sub => $sub_name);
+
+	    if (scalar (@$parameters)) {
+		foreach my $parameter (@$parameters) {
+		    my %par_info = (%$parameter, %sub_info);
+		    push (@meta_info_list, \%par_info);
+		}
+	    }
+	    else { # sub has no parameters
+		$sub_info{rule} = $sub_info{kind} = $sub_info{name} = ''; 
+		push (@meta_info_list, \%sub_info);
+	    }
+	}
+    }
+
+    return \@meta_info_list;
+}
+
 sub _start_sub_meta_extraction { # parameters_start
     $doc_class_method = $get_caller_info->();
     $doc_class_method =~ s/.*\:\://og;
-    $class_meta_model->{$doc_class_name}->{$doc_class_method} = [];
+    $class_meta_model->{$doc_class_name}->{subs}->{$doc_class_method} = {};
+    $class_meta_model->{$doc_class_name}->{subs}->{$doc_class_method}->{params} = [];
     # print "\tMethod: $doc_class_method  # ---------------------------------------\n";
     return 0;
 }
@@ -901,19 +945,30 @@ sub _end_sub_meta_extraction { # parameters_end
 }
 
 sub _sub_meta_extract_named_parameter { # named_parameter
-    my $argument_info_str = _api_doc_get_argument_info(@_);
-    # print "\t\tNamed Parameter: $argument_info_str\n";
-    my $param_name = $_[0];
-    push (@{$class_meta_model->{$doc_class_name}->{$doc_class_method}}, "Named|$argument_info_str");
+    my $argument_infos = _api_doc_get_argument_info(@_);
+    push (@{$class_meta_model->{$doc_class_name}->{subs}->{$doc_class_method}->{params}},
+	  {
+	      kind => Named =>
+	      name => $argument_infos->[0],
+	      rule => $argument_infos->[1],
+	  }
+	);
 
     local ($Scalar::Validation::off) = 1;
+    $trouble_level++;
     return _do_named_parameter(@_);
 }
 
 sub _sub_meta_extract_positional_parameter { # parameter
-    my $argument_info_str = _api_doc_get_argument_info(@_);
+    my $argument_infos = _api_doc_get_argument_info(@_);
     # print "\t\tPositional Parameter: $argument_info_str\n";
-    push (@{$class_meta_model->{$doc_class_name}->{$doc_class_method}},  "Positional|$argument_info_str");
+    push (@{$class_meta_model->{$doc_class_name}->{subs}->{$doc_class_method}->{params}},
+	  {
+	      kind => Positional =>
+	      name => $argument_infos->[0],
+	      rule => $argument_infos->[1],
+	  }
+	);
 
     local ($Scalar::Validation::off) = 1;
     $trouble_level++;
@@ -934,7 +989,7 @@ sub _api_doc_get_argument_info {
     unless ($rule_info) {
         $trouble_level++;
         $fail_action->("rule for validation not set");
-        return $_; # in case of fail action doesn't die
+        return [$_]; # in case of fail action doesn't die
     }
 
     my $rule_ref = $rule_store->{$rule_info};
@@ -945,14 +1000,23 @@ sub _api_doc_get_argument_info {
 	$rule_info_string = $rule_ref->{-name};
     }
     else {
-	$rule_ref         = $special_rules->{$rule_info};
+	my $special_rule_name = $rule_info;
+	# print "$rule_info, ".join(', ', @_)."\n";
+	$rule_ref = $special_rules->{$special_rule_name};
 	if ($rule_ref) {
 	    my $last_idx = scalar(@_);
 	    if ($last_idx >= 0) {
-		$rule_info_string = $rule_ref->{-print_args}->(@_) if $rule_ref;
+		my $print_args = $rule_ref->{-print_args};
+		if ($print_args) {
+		    $rule_info_string = $print_args->(@_);
+		}
+		else {
+		    $fail_action->("print_args missing for rule '$special_rule_name'");
+		}
 	    }
 	}
     }
+
     unless ($rule_ref) {
         my $ref_type = ref ($rule_info);
         
@@ -960,7 +1024,7 @@ sub _api_doc_get_argument_info {
             $trouble_level++;
 	    my $error_message = "unknown rule '$rule_info' for validation";
             $fail_action->($error_message);
-            return $error_message;
+            return [$error_message];
         }
         elsif ($ref_type eq 'HASH') { # given rule
             $rule_ref = $rule_info;
@@ -975,12 +1039,12 @@ sub _api_doc_get_argument_info {
             $trouble_level++;
 	    my $error_message = "Rules: cannot handle ref type '$ref_type' of rule '$rule_info' for validation";
             $fail_action->$error_message();
-            return $error_message; # in case of fail action doesn't die
+            return [$error_message]; # in case of fail action doesn't die
         }
 	$rule_info_string = $rule_ref->{-name};
     }
 
-    return "$name|$rule_info_string";
+    return [$name, $rule_info_string];
 
 }
 
@@ -1220,7 +1284,7 @@ sub less_equal {
 
 sub is_a {
     my $type = shift;
-    return ({ -name    => "IsClass_$type",
+    return ({ -name    => "IsClass '$type'",
               -as      => 'Class',
               -where   => sub { return $_->isa($type) },
               -message => sub { "$_ is not of class $type or derived from it."},
@@ -1445,7 +1509,7 @@ Scalar::Validation - Makes validation of scalar values or function
 
 =head1 VERSION
 
-This documentation refers to version 0.616 of Scalar::Validation
+This documentation refers to version 0.700 of Scalar::Validation
 
 =head1 SYNOPSIS
 
@@ -1598,21 +1662,32 @@ process its own rules, if you want.
 
 Following validation functions exist:
 
-  validate(...);
-    par(...);           # Alias for validate()
-    parameter(...);     # Alias for validate()
+  # --- sub parameters
+  parameter(...);       # Positional parameter
+    par(...);           # Alias for parameter()
 
   named_parameter(...);
     n_par(...);         # Alias for named_parameter()
 
-  # same as validate, but with option to correct invalid value
+  # --- just validate a value, that is not a sub parameter
+  validate(...);
+
+  # --- same as validate, but with option to correct invalid value
   validate_and_correct(...);
 
   is_valid(...);
 
 =head3 validate(), parameter() and par()
 
-Different names for same functionality. Use like
+Different names for same functionality.
+
+But 
+
+  validate(...);
+
+is ignored while building up meta information.
+
+Use like
 
   my $var_float = validate ('PI is a float' => Float => $PI);
   my $par_int   = par      (par_int         => Int   => shift);
@@ -2073,7 +2148,109 @@ detected by unit testing.
 Have a look into the examples directory or Scalar-Validation.t to see
 what else is possible.
 
-=head2 Comming Soon
+=head2 Extraction Of Meta Information
+
+It is possible to extract meta information out of subs or classes, if 
+subs are build by following structure:
+
+  package MyClass;
+
+  sub my_sub {
+      my $trouble_level = p_start;
+
+      my $first_par = par first_par => Int => shift;
+      # additional parameters ...
+
+      my %pars = convert_to_named_params \@_;
+
+      my $max_potenz = npar -first_named => PositiveFloat => \%pars;
+      # additional named parameters ...
+
+      p_end \%pars;
+
+      # needed to exit sub in meta extraction mode
+      return undef if validation_trouble($trouble_level);
+
+      # ------------------
+
+      # Code of sub doing something
+  }
+
+  sub my_next_sub { ...
+
+Extracting meta information will be done as followed:
+
+  use Scalar::Validation qw(:all);
+  use MyValidation; # if existing!
+
+  meta_info_clear();
+
+  # ------------------------------------------------------------------------------
+
+  my $my_class = build_meta_info_for_module('MyClass');
+
+  # or, if constructor needs arguments
+  $my_class = build_meta_info_for_module('MyClass',
+              sub { return MyClass->new(-name => 'AnyPerson') });
+
+  # call without paramters, they are not needed for meta information mode
+  $my_class->my_sub();
+  $my_class->my_next_sub();
+
+  # ------------------------------------------------------------------------------
+
+  # next classes
+
+  # ------------------------------------------------------------------------------
+  end_meta_info_gen();
+
+  print "\n# === Meta Class Information Dump ============================\n"
+    .Dumper(get_meta_info());
+
+This will print out
+
+  $VAR = {'MyClass' => {
+              'subs' => 
+              {
+                  'my_next_sub' => {
+                      'params'  => [
+                          # this sub has no parameters
+                      ],
+                  },
+                  'my_sub' => {
+                      'params'  => [
+                          {
+                              'kind' => 'Positional',
+                              'name' => 'first_par',
+                              'rule' => 'Int',
+                          },
+                          {
+                              'kind' => 'Named',
+                              'name' => '-first_named',
+                              'rule' => 'PositiveFloat',
+                          },
+                      ],
+                  },
+	      },
+         };
+
+as hash_ref of classes/packages containing methods/subs containing
+an array of parameters for each sub. The additional keys 'subs' and
+'params' let this meta model be easy extended later on.
+
+Or use C<list_meta_info()> to get an ordered list containing one hash
+per parameter like:
+
+  [ { 'module' => 'MyClass',
+      'sub'    => 'my_sub',
+      'kind'   => 'Positional',
+      'name'   => 'first_par',
+      'rule'   => 'Int',
+    },
+  ...
+  ]
+
+=head2 Coming Soon
 
 =head3 if_par()
 
@@ -2097,14 +2274,6 @@ C<$file_option> is a hash containing keys C<-value, -matched (counter),
 -rules (string of all tried)>.
 
 C<if_par_end> checks that at least one rule fits.
-
-=head2 Comming Later
-
-Generating documentation out source using special implementations of
-
-  named_parameter
-  parameter
-  parameters_end
 
 =head1 SEE ALSO Moose, Moo, Type::Params and Kavorka
 

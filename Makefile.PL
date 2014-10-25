@@ -1,6 +1,12 @@
 use ExtUtils::MakeMaker;
-# See lib/ExtUtils/MakeMaker.pm for details of how to influence
-# the contents of the Makefile that is written.
+
+@extras = ();
+
+push(
+    @extras,
+    LICENSE => 'perl_5',
+) if ( $ExtUtils::MakeMaker::Version >= 6.31 );
+
 WriteMakefile(
     NAME              => 'Scalar::Validation',
     VERSION_FROM      => 'lib/Scalar/Validation.pm', # finds $VERSION

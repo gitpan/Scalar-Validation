@@ -12,7 +12,7 @@ use warnings;
 use Scalar::Validation qw (:all);
 
 sub named {
-    local $Scalar::Validation::trouble_level = 0;
+    my $trouble_level = p_start;
 
     # --- safe creation of hash from arguments ---------------------
     my %parameters = convert_to_named_params \@_;
@@ -22,10 +22,10 @@ sub named {
     my $p_float = npar -p_float => Float => \%parameters;
 
     # --- something left in parameters ? ---
-    parameters_end \%parameters;
+    p_end \%parameters;
 
     # --- stop if still running and some validations have failed ---
-    return undef if validation_trouble();
+    return undef if validation_trouble $trouble_level; 
 
     # --- run sub -------------------------------------------------
     print  "named (-p_int => $p_int , -p_float => $p_float)\n";

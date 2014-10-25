@@ -12,7 +12,7 @@ use warnings;
 use Scalar::Validation qw (:all);
 
 sub indexed {
-    local $Scalar::Validation::trouble_level = 0;
+    my $trouble_level = parameters_start;
 
     # --- define and scan parameters ------------------------------
     my $p_int   = par p_int   => Int   => shift;
@@ -22,7 +22,7 @@ sub indexed {
     parameters_end \@_;
 
     # --- stop if still running and some validations have failed ---
-    return undef if validation_trouble();
+    return undef if validation_trouble $trouble_level; 
 	
     # --- run sub -------------------------------------------------
     print  "indexed (p_int = $p_int , p_float = $p_float)\n";
